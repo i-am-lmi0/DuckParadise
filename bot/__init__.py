@@ -1,1 +1,1 @@
-# tests/__init__.py
+# bot/__init__.py
