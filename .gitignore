@@ -1,0 +1,166 @@
+# byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# translations
+*.mo
+*.pot
+
+# django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# flask stuff:
+instance/
+.webassets-cache
+
+# scrapy stuff:
+.scrapy
+
+# sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pdm
+#   similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#pdm.lock
+#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
+#   in version control.
+#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# sageMath parsed files
+*.sage.py
+
+# environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# spyder project settings
+.spyderproject
+.spyproject
+
+# rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# python debug symbols
+cython_debug/
+
+# abstra
+# abstra is an AI-powered process automation framework.
+# ignore directories containing user credentials, local state, and settings.
+# learn more at https://abstra.io/docs
+.abstra/
+
+# ruff stuff:
+.ruff_cache/
+
+# pyPI configuration file
+.pypirc
+
+# cursor
+#  cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
+#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
+#  refer to https://docs.cursor.com/context/ignore-files
+.cursorignore
+.cursorindexingignore
+
+# environment
+.env
+
+# python
+__pycache__/
+*.py[cod]
+
+# data files
+bot/warnings.json
+bot/actions.json
