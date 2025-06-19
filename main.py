@@ -79,6 +79,52 @@ async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     print("------")
 
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"⚠️ Missing arguments. Usage: `{ctx.command.name} {ctx.command.signature}`")
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ You don't have permission to use this command.")
+    elif isinstance(error, commands.CommandNotFound):
+        await ctx.send("❓ Invalid command. Use `?cmds` to see available commands.")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("⚠️ Invalid argument type. Please check your input.")
+    else:
+        await ctx.send("❗ An unexpected error occurred while processing the command.")
+        raise error
+
+@bot.command()
+async def cmds(ctx):
+    embed = discord.Embed(title="Command List", color=discord.Color.blue())
+    embed.add_field(
+        name="Staff-only Commands",
+        value="""
+?kick @user <reason>
+?ban @user <reason>
+?unban <user_id>
+?mute @user <duration> <reason>
+?unmute @user
+?purge <number>
+?warn @user <reason>
+?slowmode <seconds>
+?setprefix <new prefix>
+?reactionrole <message_id> <emoji> @role
+?logchannel #channel
+?userinfo @user
+?staffset @role
+        """,
+        inline=False
+    )
+    embed.add_field(
+        name="General Commands",
+        value="""
+?serverinfo
+?cmds
+        """,
+        inline=False
+    )
+    await ctx.send(embed=embed)
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def staffset(ctx, role: discord.Role):
@@ -222,29 +268,6 @@ async def userinfo(ctx, member: discord.Member):
 @bot.command()
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\nID: {ctx.guild.id}\nMembers: {ctx.guild.member_count}")
-
-@bot.command()
-async def cmds(ctx):
-    await ctx.send("""
-Staff-only Commands:
-?!kick @user <reason>
-?ban @user <reason>
-?unban <user_id>
-?mute @user <duration> <reason>
-?unmute @user
-?purge <number>
-?warn @user <reason>
-?slowmode <seconds>
-?setprefix <new prefix>
-?reactionrole <message_id> <emoji> @role
-?logchannel #channel
-?userinfo @user
-?staffset @role
-
-General:
-?serverinfo
-?cmds
-""")
 
 def convert_time(time_str):
     try:
