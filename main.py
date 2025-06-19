@@ -7,6 +7,7 @@ import os
 import json
 from keep_alive import keep_alive
 from datetime import datetime
+import traceback
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -20,24 +21,36 @@ WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
 
 def load_warnings():
-    if os.path.exists(WARNINGS_FILE):
-        with open(WARNINGS_FILE, "r") as f:
-            return json.load(f)
+    try:
+        if os.path.exists(WARNINGS_FILE):
+            with open(WARNINGS_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Failed to load warnings: {e}")
     return {}
 
 def save_warnings(warnings):
-    with open(WARNINGS_FILE, "w") as f:
-        json.dump(warnings, f, indent=4)
+    try:
+        with open(WARNINGS_FILE, "w") as f:
+            json.dump(warnings, f, indent=4)
+    except Exception as e:
+        print(f"Failed to save warnings: {e}")
 
 def load_actions():
-    if os.path.exists(ACTIONS_FILE):
-        with open(ACTIONS_FILE, "r") as f:
-            return json.load(f)
+    try:
+        if os.path.exists(ACTIONS_FILE):
+            with open(ACTIONS_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Failed to load actions: {e}")
     return {}
 
 def save_actions(data):
-    with open(ACTIONS_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open(ACTIONS_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Failed to save actions: {e}")
 
 warnings_data = load_warnings()
 actions_data = load_actions()
@@ -52,26 +65,29 @@ def staff_only():
     return commands.check(predicate)
 
 async def log_action(ctx, message, user_id=None, action_type=None):
-    if log_channel_id:
-        channel = bot.get_channel(log_channel_id)
-        if channel:
-            timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
-            user_info = f"[User: {ctx.author} | ID: {ctx.author.id}]"
-            await channel.send(f"[LOG - {timestamp}] {user_info} {message}")
-    if user_id and action_type:
-        guild_id = str(ctx.guild.id)
-        uid = str(user_id)
-        if guild_id not in actions_data:
-            actions_data[guild_id] = {}
-        if uid not in actions_data[guild_id]:
-            actions_data[guild_id][uid] = []
-        actions_data[guild_id][uid].append({
-            "type": action_type,
-            "by": str(ctx.author),
-            "time": datetime.utcnow().isoformat(),
-            "detail": message
-        })
-        save_actions(actions_data)
+    try:
+        if log_channel_id:
+            channel = bot.get_channel(log_channel_id)
+            if channel:
+                timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
+                user_info = f"[User: {ctx.author} | ID: {ctx.author.id}]"
+                await channel.send(f"[LOG - {timestamp}] {user_info} {message}")
+        if user_id and action_type:
+            guild_id = str(ctx.guild.id)
+            uid = str(user_id)
+            if guild_id not in actions_data:
+                actions_data[guild_id] = {}
+            if uid not in actions_data[guild_id]:
+                actions_data[guild_id][uid] = []
+            actions_data[guild_id][uid].append({
+                "type": action_type,
+                "by": str(ctx.author),
+                "time": datetime.utcnow().isoformat(),
+                "detail": message
+            })
+            save_actions(actions_data)
+    except Exception as e:
+        print(f"Error logging action: {e}")
 
 @bot.event
 async def on_ready():
@@ -91,7 +107,9 @@ async def on_command_error(ctx, error):
         await ctx.send("⚠️ Invalid argument type. Please check your input.")
     else:
         await ctx.send("❗ An unexpected error occurred while processing the command.")
-        raise error
+        print("--- Traceback Start ---")
+        traceback.print_exception(type(error), error, error.__traceback__)
+        print("--- Traceback End ---")
 
 @bot.command()
 async def cmds(ctx):
@@ -276,5 +294,44 @@ def convert_time(time_str):
     except (ValueError, KeyError):
         return None
 
-keep_alive()
-bot.run(TOKEN)
+if __name__ == '__main__':
+    import tempfile
+    import shutil
+
+    def test_convert_time():
+        assert convert_time("10s") == 10
+        assert convert_time("2m") == 120
+        assert convert_time("1h") == 3600
+        assert convert_time("1d") == 86400
+        assert convert_time("5x") is None
+        assert convert_time("abc") is None
+
+    def test_warning_file_rw():
+        backup = shutil.copy(WARNINGS_FILE, WARNINGS_FILE + ".bak") if os.path.exists(WARNINGS_FILE) else None
+        test_data = {"123": {"456": [{"reason": "test", "by": "tester", "time": "now"}]}}
+        save_warnings(test_data)
+        loaded = load_warnings()
+        assert loaded == test_data
+        if backup:
+            shutil.move(WARNINGS_FILE + ".bak", WARNINGS_FILE)
+        else:
+            os.remove(WARNINGS_FILE)
+
+    def test_actions_file_rw():
+        backup = shutil.copy(ACTIONS_FILE, ACTIONS_FILE + ".bak") if os.path.exists(ACTIONS_FILE) else None
+        test_data = {"789": {"101": [{"type": "test", "by": "tester", "time": "now", "detail": "some detail"}]}}
+        save_actions(test_data)
+        loaded = load_actions()
+        assert loaded == test_data
+        if backup:
+            shutil.move(ACTIONS_FILE + ".bak", ACTIONS_FILE)
+        else:
+            os.remove(ACTIONS_FILE)
+
+    test_convert_time()
+    test_warning_file_rw()
+    test_actions_file_rw()
+    print("All tests passed!")
+else:
+    keep_alive()
+    bot.run(TOKEN)
