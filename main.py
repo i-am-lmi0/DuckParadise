@@ -239,6 +239,7 @@ Staff-only Commands:
 ?reactionrole <message_id> <emoji> @role
 ?logchannel #channel
 ?userinfo @user
+?staffset @role
 
 General:
 ?serverinfo
