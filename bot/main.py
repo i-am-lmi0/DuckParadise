@@ -282,32 +282,69 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
 async def userinfo(ctx, member: discord.Member):
     roles = [role.name for role in member.roles if role.name != "@everyone"]
     roles_string = ", ".join(roles) if roles else "None"
-
+    
     joined_at = member.joined_at.strftime("%B %d, %Y at %I:%M %p UTC") if member.joined_at else "Unknown"
     created_at = member.created_at.strftime("%B %d, %Y at %I:%M %p UTC")
-
+    
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
     warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
 
+    # create embed
     embed = discord.Embed(
-        title=f"User Info - {member}",
-        description=f"Information about {member.mention}",
-        color=discord.Color.blue()
+        title=f"Complete User Info - {member}",
+        description=f"User data for {member.mention}",
+        color=discord.Color.blurple()
     )
+    
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
 
+    # basic identity
     embed.add_field(name="Username", value=f"{member.name}#{member.discriminator}", inline=True)
+    embed.add_field(name="Display Name", value=member.display_name, inline=True)
     embed.add_field(name="User ID", value=member.id, inline=True)
-    embed.add_field(name="Bot?", value="✅ Yes" if member.bot else "❌ No", inline=True)
-    
+
+    # dates
     embed.add_field(name="Account Created", value=created_at, inline=False)
     embed.add_field(name="Joined Server", value=joined_at, inline=False)
-    
+
+    # roles
     embed.add_field(name="Roles", value=roles_string, inline=False)
     embed.add_field(name="Top Role", value=member.top_role.name if member.top_role else "None", inline=True)
-    embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
+    embed.add_field(name="Hoist Role", value=member.top_role.name if member.top_role and member.top_role.hoist else "None", inline=True)
+
+    # status & activity
     embed.add_field(name="Status", value=str(member.status).capitalize(), inline=True)
+    embed.add_field(name="Desktop Status", value=str(member.desktop_status).capitalize(), inline=True)
+    embed.add_field(name="Mobile Status", value=str(member.mobile_status).capitalize(), inline=True)
+    embed.add_field(name="Web Status", value=str(member.web_status).capitalize(), inline=True)
+
+    # activity (if any)
+    activity = member.activity
+    if activity:
+        embed.add_field(name="Activity Type", value=str(activity.type).split('.')[-1].capitalize(), inline=True)
+        embed.add_field(name="Activity Name", value=activity.name, inline=True)
+        if hasattr(activity, 'details') and activity.details:
+            embed.add_field(name="Activity Details", value=activity.details, inline=True)
+        if hasattr(activity, 'state') and activity.state:
+            embed.add_field(name="Activity State", value=activity.state, inline=True)
+
+    # other
+    embed.add_field(name="Is Bot", value="✅ Yes" if member.bot else "❌ No", inline=True)
+    embed.add_field(name="Is Timed Out?", value="✅ Yes" if member.timed_out else "❌ No", inline=True)
+    embed.add_field(name="Pending?", value="✅ Yes" if member.pending else "❌ No", inline=True)
+    embed.add_field(name="Boosting Since", value=member.premium_since.strftime("%B %d, %Y at %I:%M %p UTC") if member.premium_since else "Not boosting", inline=False)
+
+    # permissions
+    permissions = [perm[0].replace('_', ' ').title() for perm in member.guild_permissions if perm[1]]
+    permissions_str = ', '.join(permissions) if permissions else "None"
+    embed.add_field(name="Guild Permissions", value=permissions_str, inline=False)
+
+    # warnings
+    embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
+
+    # avatar
+    embed.set_image(url=member.banner.url if hasattr(member, "banner") and member.banner else "")
 
     await ctx.send(embed=embed)
 
