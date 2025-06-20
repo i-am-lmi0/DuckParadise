@@ -102,7 +102,9 @@ async def resolve_member(ctx, arg):
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="my creator, theofficialtruck"))
+    await bot.change_presence(
+        activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck")
+    )
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     print("------")
 
