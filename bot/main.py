@@ -89,6 +89,17 @@ async def log_action(ctx, message, user_id=None, action_type=None):
     except Exception as e:
         print(f"Error logging action: {e}")
 
+async def resolve_member(ctx, arg):
+    try:
+        member = await commands.MemberConverter().convert(ctx, arg)
+        return member
+    except commands.BadArgument:
+        try:
+            member = await ctx.guild.fetch_member(int(arg))
+            return member
+        except:
+            return None
+
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="my creator, theofficialtruck"))
@@ -161,6 +172,9 @@ async def logchannel(ctx, channel: discord.TextChannel):
 @bot.command()
 @staff_only()
 async def kick(ctx, member: discord.Member, *, reason=None):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
     await member.kick(reason=reason)
     await ctx.send(f"Kicked {member.mention} for reason: {reason}")
     await log_action(ctx, f"kicked {member} for: {reason}", user_id=member.id, action_type="kick")
@@ -168,6 +182,9 @@ async def kick(ctx, member: discord.Member, *, reason=None):
 @bot.command()
 @staff_only()
 async def ban(ctx, member: discord.Member, *, reason=None):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
     await member.ban(reason=reason)
     await ctx.send(f"Banned {member.mention} for reason: {reason}")
     await log_action(ctx, f"banned {member} for: {reason}", user_id=member.id, action_type="ban")
@@ -175,6 +192,9 @@ async def ban(ctx, member: discord.Member, *, reason=None):
 @bot.command()
 @staff_only()
 async def unban(ctx, user_id: int):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
     user = await bot.fetch_user(user_id)
     await ctx.guild.unban(user)
     await ctx.send(f"Unbanned {user.mention}")
@@ -183,6 +203,9 @@ async def unban(ctx, user_id: int):
 @bot.command()
 @staff_only()
 async def mute(ctx, member: discord.Member, duration: str = None, *, reason=None):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if not mute_role:
         mute_role = await ctx.guild.create_role(name="Muted")
@@ -204,6 +227,9 @@ async def mute(ctx, member: discord.Member, duration: str = None, *, reason=None
 @bot.command()
 @staff_only()
 async def unmute(ctx, member: discord.Member):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if mute_role in member.roles:
         await member.remove_roles(mute_role)
@@ -222,6 +248,9 @@ async def purge(ctx, amount: int):
 @bot.command()
 @staff_only()
 async def warn(ctx, member: discord.Member, *, reason=None):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
     if guild_id not in warnings_data:
@@ -280,6 +309,9 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
 
 @bot.command()
 async def userinfo(ctx, member: discord.Member):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
     roles = [role.name for role in member.roles if role.name != "@everyone"]
     roles_string = ", ".join(roles) if roles else "None"
     
