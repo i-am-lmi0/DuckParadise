@@ -280,19 +280,34 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
 
 @bot.command()
 async def userinfo(ctx, member: discord.Member):
-    roles = ", ".join([role.name for role in member.roles if role.name != "@everyone"])
+    roles = [role.name for role in member.roles if role.name != "@everyone"]
+    roles_string = ", ".join(roles) if roles else "None"
+
     joined_at = member.joined_at.strftime("%B %d, %Y at %I:%M %p UTC") if member.joined_at else "Unknown"
+    created_at = member.created_at.strftime("%B %d, %Y at %I:%M %p UTC")
 
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
     warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
 
-    embed = discord.Embed(title=f"User Info - {member}", color=discord.Color.green())
+    embed = discord.Embed(
+        title=f"User Info - {member}",
+        description=f"Information about {member.mention}",
+        color=discord.Color.blue()
+    )
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-    embed.add_field(name="User ID", value=member.id, inline=False)
+
+    embed.add_field(name="Username", value=f"{member.name}#{member.discriminator}", inline=True)
+    embed.add_field(name="User ID", value=member.id, inline=True)
+    embed.add_field(name="Bot?", value="✅ Yes" if member.bot else "❌ No", inline=True)
+    
+    embed.add_field(name="Account Created", value=created_at, inline=False)
     embed.add_field(name="Joined Server", value=joined_at, inline=False)
-    embed.add_field(name="Roles", value=roles or "None", inline=False)
-    embed.add_field(name="Warnings", value=str(warnings), inline=False)
+    
+    embed.add_field(name="Roles", value=roles_string, inline=False)
+    embed.add_field(name="Top Role", value=member.top_role.name if member.top_role else "None", inline=True)
+    embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
+    embed.add_field(name="Status", value=str(member.status).capitalize(), inline=True)
 
     await ctx.send(embed=embed)
 
