@@ -407,7 +407,7 @@ if __name__ == '__main__':
 
     def test_warning_file_rw():
         backup = shutil.copy(WARNINGS_FILE, WARNINGS_FILE + ".bak") if os.path.exists(WARNINGS_FILE) else None
-        test_data = {"123": {"456": [{"reason": "test", "by": "tester", "time": "now"}]}}
+        test_data = {"123": {"456": [{"reason": "test", "by": "tester", "time": "now"}]} }
         save_warnings(test_data)
         loaded = load_warnings()
         assert loaded == test_data
@@ -418,7 +418,7 @@ if __name__ == '__main__':
 
     def test_actions_file_rw():
         backup = shutil.copy(ACTIONS_FILE, ACTIONS_FILE + ".bak") if os.path.exists(ACTIONS_FILE) else None
-        test_data = {"789": {"101": [{"type": "test", "by": "tester", "time": "now", "detail": "some detail"}]}}
+        test_data = {"789": {"101": [{"type": "test", "by": "tester", "time": "now", "detail": "some detail"}]} }
         save_actions(test_data)
         loaded = load_actions()
         assert loaded == test_data
@@ -431,6 +431,6 @@ if __name__ == '__main__':
     test_warning_file_rw()
     test_actions_file_rw()
     print("All tests passed!")
-else:
-    keep_alive()
-    bot.run(TOKEN)
+
+keep_alive()
+bot.run(TOKEN)
