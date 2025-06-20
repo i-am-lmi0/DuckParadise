@@ -1,7 +1,6 @@
 # DuckyBot 🦆
 
-[![Uptime Robot status](https://img.shields.io/uptimerobot/status/hDrQ8mdokf)](https://stats.uptimerobot.com/hDrQ8mdokf)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/DuckyBot/releases/tag/v1.0.0) 
+[![Uptime Robot status](https://img.shields.io/badge/status-view_bot_status-red)](https://stats.uptimerobot.com/hDrQ8mdokf)
 
 DuckyBot is a versatile and friendly Discord bot designed to help you moderate your server, automate tasks, and enhance your community's experience. It's hosted reliably on [Render.com](https://render.com), ensuring consistent performance and availability.
 
@@ -45,9 +44,3 @@ You can check the current operational status of DuckyBot on our UptimeRobot stat
 ## Hosting
 
 DuckyBot is proudly hosted on [Render.com](https://render.com), a modern cloud platform that provides reliable and scalable hosting solutions.
-
----
-
-## Version History
-
-* **v1.0.0** - Initial stable release of DuckyBot with core moderation and utility features.
