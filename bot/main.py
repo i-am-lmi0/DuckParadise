@@ -281,7 +281,20 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
 @bot.command()
 async def userinfo(ctx, member: discord.Member):
     roles = ", ".join([role.name for role in member.roles if role.name != "@everyone"])
-    await ctx.send(f"User: {member}\nID: {member.id}\nJoined: {member.joined_at}\nRoles: {roles}")
+    joined_at = member.joined_at.strftime("%B %d, %Y at %I:%M %p UTC") if member.joined_at else "Unknown"
+
+    guild_id = str(ctx.guild.id)
+    user_id = str(member.id)
+    warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
+
+    embed = discord.Embed(title=f"User Info - {member}", color=discord.Color.green())
+    embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+    embed.add_field(name="User ID", value=member.id, inline=False)
+    embed.add_field(name="Joined Server", value=joined_at, inline=False)
+    embed.add_field(name="Roles", value=roles or "None", inline=False)
+    embed.add_field(name="Warnings", value=str(warnings), inline=False)
+
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def serverinfo(ctx):
