@@ -1,6 +1,6 @@
 services:
-  - type: worker
-    name: DuckParadise
+  - type: web
+    name: duckparadise-bot
     env: python
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python3 main.py"
