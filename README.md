@@ -2,13 +2,13 @@
 
 [![Uptime Robot status](https://img.shields.io/badge/status-view_bot_status-red)](https://stats.uptimerobot.com/hDrQ8mdokf)
 
-DuckyBot is a versatile and friendly Discord bot designed to help you moderate your server, automate tasks, and enhance your community's experience. It's hosted reliably on [Render.com](https://render.com), ensuring consistent performance and availability.
+DuckParadise is a versatile and friendly Discord bot designed to help you moderate your server, automate tasks, and enhance your community's experience. It's hosted reliably on [Render.com](https://render.com), ensuring consistent performance and availability.
 
 ---
 
 ## Features
 
-DuckyBot offers a range of powerful commands to help you manage your Discord server effectively:
+DuckParadise offers a range of powerful commands to help you manage your Discord server effectively:
 
 ### Moderation
 
@@ -35,7 +35,7 @@ DuckyBot offers a range of powerful commands to help you manage your Discord ser
 
 ## Bot Status
 
-You can check the current operational status of DuckyBot on our UptimeRobot status page:
+You can check the current operational status of DuckParadise on our UptimeRobot status page:
 
 [https://stats.uptimerobot.com/hDrQ8mdokf](https://stats.uptimerobot.com/hDrQ8mdokf)
 
@@ -43,4 +43,4 @@ You can check the current operational status of DuckyBot on our UptimeRobot stat
 
 ## Hosting
 
-DuckyBot is proudly hosted on [Render.com](https://render.com), a modern cloud platform that provides reliable and scalable hosting solutions.
+DuckParadise is proudly hosted on [Render.com](https://render.com), a modern cloud platform that provides reliable and scalable hosting solutions.
