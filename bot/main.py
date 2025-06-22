@@ -181,16 +181,20 @@ async def cmds(ctx):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def staffset(ctx, role: discord.Role):
-    global staff_role_id
+    global staff_role_id, config
     staff_role_id = role.id
+    config["staff_role_id"] = staff_role_id
+    save_config(config)
     await ctx.send(f"Staff role set to {role.mention}")
     await log_action(ctx, f"set staff role to {role.name} (ID: {role.id})")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def logchannel(ctx, channel: discord.TextChannel):
-    global log_channel_id
+    global log_channel_id, config
     log_channel_id = channel.id
+    config["log_channel_id"] = log_channel_id
+    save_config(config)
     await ctx.send(f"Log channel set to {channel.mention}")
 
 @bot.command()
