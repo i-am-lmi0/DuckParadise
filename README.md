@@ -1,4 +1,4 @@
-# DuckyBot 🦆
+# DuckyParadise Discord Bot
 
 [![Uptime Robot status](https://img.shields.io/badge/status-view_bot_status-red)](https://stats.uptimerobot.com/hDrQ8mdokf)
 
