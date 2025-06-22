@@ -19,6 +19,28 @@ staff_role_id = None
 
 WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
+CONFIG_FILE = "config.json"
+
+def load_config():
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Failed to load config: {e}")
+    return {}
+
+def save_config(data):
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Failed to save config: {e}")
+
+# initialize config
+config = load_config()
+staff_role_id = config.get("staff_role_id")
+log_channel_id = config.get("log_channel_id")
 
 def load_warnings():
     try:
