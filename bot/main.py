@@ -79,23 +79,31 @@ actions_data = load_actions()
 
 def staff_only():
     async def predicate(ctx):
-        if not staff_role_id:
-            await ctx.send("Staff role is not set.")
+        guild_id = str(ctx.guild.id)
+        role_id = config.get("staff_roles", {}).get(guild_id)
+        if not role_id:
+            await ctx.send("⚠️ Staff role is not set for this server.")
             return False
-        role = discord.utils.get(ctx.guild.roles, id=staff_role_id)
-        return role in ctx.author.roles
+        role = discord.utils.get(ctx.guild.roles, id=role_id)
+        if role and role in ctx.author.roles:
+            return True
+        await ctx.send("❌ You don't have the staff role required to run this command.")
+        return False
     return commands.check(predicate)
 
 async def log_action(ctx, message, user_id=None, action_type=None):
     try:
+        guild_id = str(ctx.guild.id)
+        log_channel_id = config.get("log_channels", {}).get(guild_id)
+
         if log_channel_id:
             channel = bot.get_channel(log_channel_id)
             if channel:
                 timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
                 user_info = f"[User: {ctx.author} | ID: {ctx.author.id}]"
                 await channel.send(f"[LOG - {timestamp}] {user_info} {message}")
+
         if user_id and action_type:
-            guild_id = str(ctx.guild.id)
             uid = str(user_id)
             if guild_id not in actions_data:
                 actions_data[guild_id] = {}
@@ -124,6 +132,12 @@ async def resolve_member(ctx, arg):
 
 @bot.event
 async def on_ready():
+    for guild in bot.guilds:
+        gid = str(guild.id)
+        if "staff_roles" in config and gid in config["staff_roles"]:
+            print(f"[Config] Staff role for {guild.name}: {config['staff_roles'][gid]}")
+        if "log_channels" in config and gid in config["log_channels"]:
+            print(f"[Config] Log channel for {guild.name}: {config['log_channels'][gid]}")
     await bot.change_presence(
         activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck")
     )
@@ -181,21 +195,37 @@ async def cmds(ctx):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def staffset(ctx, role: discord.Role):
-    global staff_role_id, config
-    staff_role_id = role.id
-    config["staff_role_id"] = staff_role_id
+    guild_id = str(ctx.guild.id)
+    if "staff_roles" not in config:
+        config["staff_roles"] = {}
+    config["staff_roles"][guild_id] = role.id
     save_config(config)
-    await ctx.send(f"Staff role set to {role.mention}")
-    await log_action(ctx, f"set staff role to {role.name} (ID: {role.id})")
+    await ctx.send(f"✅ Staff role set to {role.mention}")
+    await log_action(ctx, f"Set staff role to {role.name} (ID: {role.id})")
+    
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def staffget(ctx):
+    guild_id = str(ctx.guild.id)
+    role_id = config.get("staff_roles", {}).get(guild_id)
+    if not role_id:
+        return await ctx.send("❌ No staff role has been set for this server.")
+    role = discord.utils.get(ctx.guild.roles, id=role_id)
+    if role:
+        await ctx.send(f"📌 Staff role is set to {role.mention}")
+    else:
+        await ctx.send("⚠️ The saved staff role ID does not exist anymore. Please re-set it using `?staffset @role`.")
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def logchannel(ctx, channel: discord.TextChannel):
-    global log_channel_id, config
-    log_channel_id = channel.id
-    config["log_channel_id"] = log_channel_id
+    guild_id = str(ctx.guild.id)
+    if "log_channels" not in config:
+        config["log_channels"] = {}
+    config["log_channels"][guild_id] = channel.id
     save_config(config)
-    await ctx.send(f"Log channel set to {channel.mention}")
+    await ctx.send(f"✅ Log channel set to {channel.mention} for this server.")
+    await log_action(ctx, f"Set log channel to {channel.mention}")
 
 @bot.command()
 @staff_only()
