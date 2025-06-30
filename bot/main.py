@@ -137,6 +137,54 @@ async def resolve_member(ctx, arg):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
+async def testwelcome(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    gid = str(ctx.guild.id)
+    channel_id = config.get("welcome_channels", {}).get(gid)
+    if not channel_id:
+        return await ctx.send("⚠️ Welcome channel not set. Use `?setwelcome #channel`")
+    channel = bot.get_channel(channel_id)
+    if not channel:
+        return await ctx.send("⚠️ Could not find welcome channel.")
+    
+    embed = discord.Embed(
+        title="Welcome to Duck Paradise 🦆",
+        description=(
+            f"Welcome, {member.mention}!\n"
+            f"You are our **{ctx.guild.member_count}th** member!\n\n"
+            f"⭐ Quack in <#main-pond>\n"
+            f"⭐ Equip tags in <#pond-info>\n"
+            f"⭐ Boost the server and earn <@&Golden Feather> role!"
+        ),
+        color=discord.Color.yellow()
+    )
+    embed.set_image(url="https://i.imgur.com/VyH3RlX.png")
+    await channel.send(embed=embed)
+    await ctx.send("✅ Sent test welcome message.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def testboost(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    gid = str(ctx.guild.id)
+    channel_id = config.get("boost_channels", {}).get(gid)
+    if not channel_id:
+        return await ctx.send("⚠️ Boost channel not set. Use `?setboost #channel`")
+    channel = bot.get_channel(channel_id)
+    if not channel:
+        return await ctx.send("⚠️ Could not find boost channel.")
+
+    embed = discord.Embed(
+        title="💖 Thanks for boosting!",
+        description=f"{member.mention} just boosted the pond! 🌟",
+        color=discord.Color.purple()
+    )
+    embed.set_thumbnail(url=member.avatar.url if member.avatar else "")
+    await channel.send(embed=embed)
+    await ctx.send("✅ Sent test boost message.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
 async def setwelcome(ctx, channel: discord.TextChannel):
     config["welcome_channels"][str(ctx.guild.id)] = channel.id
     save_config(config)
