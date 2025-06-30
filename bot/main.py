@@ -167,7 +167,7 @@ async def on_member_join(member):
                 ),
                 color=discord.Color.yellow()
             )
-            embed.set_image(url="https://i.imgur.com/VyH3RlX.png")  # replace with banner URL
+            embed.set_image(url="https://media.discordapp.net/attachments/1370374741579534408/1386456926300409939/duckduckgo-welcome.gif?ex=6863a962&is=686257e2&hm=9260bcae31ef85f293dfa5ecfbc9925b5cc1f1dfa2415c3c955b9d318d6f87a7&=&width=648&height=216")
             await channel.send(embed=embed)
 
 @bot.event
