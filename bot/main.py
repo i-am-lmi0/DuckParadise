@@ -21,11 +21,6 @@ WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
 CONFIG_FILE = "config.json"
 
-if "welcome_channels" not in config:
-    config["welcome_channels"] = {}
-if "boost_channels" not in config:
-    config["boost_channels"] = {}
-
 def load_config():
     try:
         if os.path.exists(CONFIG_FILE):
