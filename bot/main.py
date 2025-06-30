@@ -364,7 +364,7 @@ async def kick(ctx, *, user: str):
 
 @bot.command()
 @staff_only()
-async def ban(ctx, member: discord.Member, *, reason=None):
+async def ban(ctx, *, user: str):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -377,7 +377,7 @@ async def ban(ctx, member: discord.Member, *, reason=None):
 
 @bot.command()
 @staff_only()
-async def unban(ctx, user_id: int):
+async def unban(ctx, *, user: str):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -391,7 +391,7 @@ async def unban(ctx, user_id: int):
 
 @bot.command()
 @staff_only()
-async def mute(ctx, member: discord.Member, duration: str = None, *, reason=None):
+async def mute(ctx, *, user: str):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -418,7 +418,7 @@ async def mute(ctx, member: discord.Member, duration: str = None, *, reason=None
 
 @bot.command()
 @staff_only()
-async def unmute(ctx, member: discord.Member):
+async def unmute(ctx, *, user: str):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -442,7 +442,7 @@ async def purge(ctx, amount: int):
 
 @bot.command()
 @staff_only()
-async def warn(ctx, member: discord.Member, *, reason=None):
+async def warn(ctx, *, user: str):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
