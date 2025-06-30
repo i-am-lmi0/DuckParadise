@@ -21,6 +21,11 @@ WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
 CONFIG_FILE = "config.json"
 
+if "welcome_channels" not in config:
+    config["welcome_channels"] = {}
+if "boost_channels" not in config:
+    config["boost_channels"] = {}
+
 def load_config():
     try:
         if os.path.exists(CONFIG_FILE):
@@ -130,6 +135,69 @@ async def resolve_member(ctx, arg):
         except:
             return None
 
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setwelcome(ctx, channel: discord.TextChannel):
+    config["welcome_channels"][str(ctx.guild.id)] = channel.id
+    save_config(config)
+    await ctx.send(f"✅ Welcome channel set to {channel.mention}")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setboost(ctx, channel: discord.TextChannel):
+    config["boost_channels"][str(ctx.guild.id)] = channel.id
+    save_config(config)
+    await ctx.send(f"✅ Boost channel set to {channel.mention}")
+
+@bot.event
+async def on_member_join(member):
+    guild_id = str(member.guild.id)
+    channel_id = config.get("welcome_channels", {}).get(guild_id)
+    if channel_id:
+        channel = bot.get_channel(channel_id)
+        if channel:
+            embed = discord.Embed(
+                title="Welcome to Duck Paradise 🦆",
+                description=(
+                    f"Welcome, {member.mention}!\n"
+                    f"You are our **{member.guild.member_count}th** member!\n\n"
+                    f"⭐ Quack in <#main-pond>\n"
+                    f"⭐ Equip tags in <#pond-info>\n"
+                    f"⭐ Boost the server and earn <@&Golden Feather> role!"
+                ),
+                color=discord.Color.yellow()
+            )
+            embed.set_image(url="https://i.imgur.com/VyH3RlX.png")  # replace with banner URL
+            await channel.send(embed=embed)
+
+@bot.event
+async def on_member_update(before, after):
+    if before.premium_since is None and after.premium_since is not None:
+        guild_id = str(after.guild.id)
+        channel_id = config.get("boost_channels", {}).get(guild_id)
+        if channel_id:
+            channel = bot.get_channel(channel_id)
+            if channel:
+                embed = discord.Embed(
+                    title="💖 Thanks for boosting!",
+                    description=f"{after.mention} just boosted the pond! 🌟",
+                    color=discord.Color.purple()
+                )
+                embed.set_thumbnail(url=after.avatar.url if after.avatar else "")
+                await channel.send(embed=embed)
+
+def has_higher_role(issuer, target):
+    return issuer.top_role > target.top_role or issuer == issuer.guild.owner
+    
+def check_target_permission(ctx, member: discord.Member):
+    if member == ctx.author:
+        return "❌ You can't perform this action on yourself."
+    if member == ctx.guild.owner:
+        return "❌ You can't perform this action on the server owner."
+    if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
+        return "❌ You can't perform this action on someone with equal or higher role."
+    return None
+
 @bot.event
 async def on_ready():
     for guild in bot.guilds:
@@ -179,6 +247,8 @@ async def cmds(ctx):
 ?logchannel #channel
 ?userinfo @user
 ?staffset @role
+?setwelcome #channel
+?setboost #channel
         """,
         inline=False
     )
@@ -233,6 +303,9 @@ async def kick(ctx, member: discord.Member, *, reason=None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     await member.kick(reason=reason)
     await ctx.send(f"Kicked {member.mention} for reason: {reason}")
     await log_action(ctx, f"kicked {member} for: {reason}", user_id=member.id, action_type="kick")
@@ -243,6 +316,9 @@ async def ban(ctx, member: discord.Member, *, reason=None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     await member.ban(reason=reason)
     await ctx.send(f"Banned {member.mention} for reason: {reason}")
     await log_action(ctx, f"banned {member} for: {reason}", user_id=member.id, action_type="ban")
@@ -253,6 +329,9 @@ async def unban(ctx, user_id: int):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     user = await bot.fetch_user(user_id)
     await ctx.guild.unban(user)
     await ctx.send(f"Unbanned {user.mention}")
@@ -264,6 +343,9 @@ async def mute(ctx, member: discord.Member, duration: str = None, *, reason=None
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if not mute_role:
         mute_role = await ctx.guild.create_role(name="Muted")
@@ -288,6 +370,9 @@ async def unmute(ctx, member: discord.Member):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if mute_role in member.roles:
         await member.remove_roles(mute_role)
@@ -309,6 +394,9 @@ async def warn(ctx, member: discord.Member, *, reason=None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
     if guild_id not in warnings_data:
