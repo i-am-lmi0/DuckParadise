@@ -297,6 +297,10 @@ async def cmds(ctx):
 ?staffset @role
 ?setwelcome #channel
 ?setboost #channel
+?testwelcome
+?testwelcome @user
+?testboost
+?testboost @user
         """,
         inline=False
     )
