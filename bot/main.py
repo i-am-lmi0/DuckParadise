@@ -351,16 +351,16 @@ async def logchannel(ctx, channel: discord.TextChannel):
 
 @bot.command()
 @staff_only()
-async def kick(ctx, member: discord.Member, *, reason=None):
+async def kick(ctx, *, user: str):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
-    await member.kick(reason=reason)
-    await ctx.send(f"Kicked {member.mention} for reason: {reason}")
-    await log_action(ctx, f"kicked {member} for: {reason}", user_id=member.id, action_type="kick")
+    await member.kick(reason=f"Kicked by {ctx.author}")
+    await ctx.send(f"👢 Kicked {member.mention}")
+    await log_action(ctx, f"kicked {member}", user_id=member.id, action_type="kick")
 
 @bot.command()
 @staff_only()
