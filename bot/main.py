@@ -44,6 +44,11 @@ def save_config(data):
 
 # initialize config
 config = load_config()
+config.setdefault("staff_roles", {})
+config.setdefault("log_channels", {})
+config.setdefault("welcome_channels", {})
+config.setdefault("boost_channels", {})
+
 staff_role_id = config.get("staff_role_id")
 log_channel_id = config.get("log_channel_id")
 
