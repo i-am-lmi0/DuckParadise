@@ -126,12 +126,10 @@ async def log_action(ctx, message, user_id=None, action_type=None):
 
 async def resolve_member(ctx, arg):
     try:
-        member = await commands.MemberConverter().convert(ctx, arg)
-        return member
-    except commands.BadArgument:
+        return await commands.MemberConverter().convert(ctx, arg)
+    except Exception:
         try:
-            member = await ctx.guild.fetch_member(int(arg))
-            return member
+            return await ctx.guild.fetch_member(int(arg))
         except:
             return None
 
@@ -351,7 +349,7 @@ async def logchannel(ctx, channel: discord.TextChannel):
 
 @bot.command()
 @staff_only()
-async def kick(ctx, *, user: str):
+async def kick(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -364,7 +362,7 @@ async def kick(ctx, *, user: str):
 
 @bot.command()
 @staff_only()
-async def ban(ctx, *, user: str):
+async def ban(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -391,7 +389,7 @@ async def unban(ctx, *, user: str):
 
 @bot.command()
 @staff_only()
-async def mute(ctx, *, user: str):
+async def mute(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -442,7 +440,7 @@ async def purge(ctx, amount: int):
 
 @bot.command()
 @staff_only()
-async def warn(ctx, *, user: str):
+async def warn(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
