@@ -325,14 +325,11 @@ async def cmds(ctx):
     await ctx.send(embed=embed)
 
 @bot.command()
-@commands.has_permissions(administrator=True)
 async def staffset(ctx, role: discord.Role):
-    err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err)
+    if ctx.author != ctx.guild.owner:
+        return await ctx.send("❌ Only the server owner can set the staff role.")
     guild_id = str(ctx.guild.id)
-    if "staff_roles" not in config:
-        config["staff_roles"] = {}
+    config.setdefault("staff_roles", {})
     config["staff_roles"][guild_id] = role.id
     save_config(config)
     await ctx.send(f"✅ Staff role set to {role.mention}")
