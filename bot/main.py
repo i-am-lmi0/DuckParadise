@@ -402,6 +402,7 @@ async def cmds(ctx):
         value="""
 ?serverinfo
 ?cmds
+?afk <reason>
         """,
         inline=False
     )
