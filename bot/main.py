@@ -371,9 +371,13 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided"):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
-    await member.kick(reason=f"Kicked by {ctx.author}")
-    await ctx.send(f"Kicked {member.mention}")
-    await log_action(ctx, f"kicked {member}", user_id=member.id, action_type="kick")
+    try:
+        await member.kick(reason=f"{reason} (by {ctx.author})")
+        await ctx.send(f"Kicked {member.mention}")
+        await log_action(ctx, f"kicked {member} for: {reason}", user_id=member.id, action_type="kick")
+    except Exception as e:
+        await ctx.send("❌ Failed to kick the user.")
+        print(f"[Kick Error] {e}")
 
 @bot.command()
 @staff_only()
