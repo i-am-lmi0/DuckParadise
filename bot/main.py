@@ -248,7 +248,7 @@ async def testwelcome(ctx, member: discord.Member = None):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def testboost(ctx, member: discord.Member = None, member: discord.Member = None):
+async def testboost(ctx, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
