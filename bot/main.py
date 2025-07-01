@@ -1,5 +1,3 @@
-# main.py
-
 import discord
 from discord.ext import commands
 import asyncio
@@ -20,6 +18,23 @@ staff_role_id = None
 WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
 CONFIG_FILE = "config.json"
+REACTION_ROLE_FILE = "reaction_roles.json"
+
+def load_reaction_roles():
+    try:
+        if os.path.exists(REACTION_ROLE_FILE):
+            with open(REACTION_ROLE_FILE, "r") as f:
+                return {int(k): (v[0], v[1]) for k, v in json.load(f).items()}
+    except Exception as e:
+        print(f"Failed to load reaction roles: {e}")
+    return {}
+
+def save_reaction_roles():
+    try:
+        with open(REACTION_ROLE_FILE, "w") as f:
+            json.dump({str(k): v for k, v in reaction_roles.items()}, f, indent=4)
+    except Exception as e:
+        print(f"Failed to save reaction roles: {e}")
 
 def load_config():
     try:
@@ -135,7 +150,7 @@ async def resolve_member(ctx, arg):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def testwelcome(ctx, member: discord.Member = None):
+async def testwelcome(ctx, member: discord.Member = None, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -165,7 +180,7 @@ async def testwelcome(ctx, member: discord.Member = None):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def testboost(ctx, member: discord.Member = None):
+async def testboost(ctx, member: discord.Member = None, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -189,7 +204,7 @@ async def testboost(ctx, member: discord.Member = None):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def setwelcome(ctx, channel: discord.TextChannel):
+async def setwelcome(ctx, channel: discord.TextChannel, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -199,7 +214,7 @@ async def setwelcome(ctx, channel: discord.TextChannel):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def setboost(ctx, channel: discord.TextChannel):
+async def setboost(ctx, channel: discord.TextChannel, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -350,7 +365,7 @@ async def staffget(ctx):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def logchannel(ctx, channel: discord.TextChannel):
+async def logchannel(ctx, channel: discord.TextChannel, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -364,7 +379,7 @@ async def logchannel(ctx, channel: discord.TextChannel):
 
 @bot.command()
 @staff_only()
-async def kick(ctx, user: str, *, reason: str = "No reason provided"):
+async def kick(ctx, user: str, *, reason: str = "No reason provided", member: discord.Member = None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -381,20 +396,20 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided"):
 
 @bot.command()
 @staff_only()
-async def ban(ctx, user: str, *, reason: str = "No reason provided"):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
-    err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err)
-    await member.ban(reason=reason)
-    await ctx.send(f"Banned {member.mention} for reason: {reason}")
-    await log_action(ctx, f"banned {member} for: {reason}", user_id=member.id, action_type="ban")
+async def unban(ctx, *, user: str):
+    try:
+        user_id = int(user.strip("<@!>"))
+        user_obj = await bot.fetch_user(user_id)
+        await ctx.guild.unban(user_obj)
+        await ctx.send(f"✅ Unbanned {user_obj.mention}")
+        await log_action(ctx, f"unbanned {user_obj}", user_id=user_obj.id, action_type="unban")
+    except Exception as e:
+        await ctx.send("❌ Failed to unban the user.")
+        print(f"[Unban Error] {e}")
 
 @bot.command()
 @staff_only()
-async def unban(ctx, *, user: str):
+async def unban(ctx, *, user: str, member: discord.Member = None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -408,7 +423,7 @@ async def unban(ctx, *, user: str):
 
 @bot.command()
 @staff_only()
-async def mute(ctx, user: str, *, reason: str = "No reason provided"):
+async def mute(ctx, user: str, duration: str = None, *, reason: str = "No reason provided", member: discord.Member = None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -422,7 +437,7 @@ async def mute(ctx, user: str, *, reason: str = "No reason provided"):
             await channel.set_permissions(mute_role, speak=False, send_messages=False)
     await member.add_roles(mute_role)
     await ctx.send(f"Muted {member.mention} for reason: {reason}")
-    await log_action(ctx, f"muted {member} for: {reason} ({duration or 'indefinitely'})", user_id=member.id, action_type="mute")
+    await log_action(ctx, f"muted {member} for: {reason} ({duration or 'indefinitely'})", ...)
     if duration:
         seconds = convert_time(duration)
         if seconds:
@@ -435,7 +450,7 @@ async def mute(ctx, user: str, *, reason: str = "No reason provided"):
 
 @bot.command()
 @staff_only()
-async def unmute(ctx, *, user: str):
+async def unmute(ctx, *, user: str, member: discord.Member = None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -452,7 +467,7 @@ async def unmute(ctx, *, user: str):
 
 @bot.command()
 @staff_only()
-async def purge(ctx, amount: int):
+async def purge(ctx, amount: int, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -462,7 +477,7 @@ async def purge(ctx, amount: int):
 
 @bot.command()
 @staff_only()
-async def warn(ctx, user: str, *, reason: str = "No reason provided"):
+async def warn(ctx, user: str, *, reason: str = "No reason provided", member: discord.Member = None):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
@@ -486,7 +501,7 @@ async def warn(ctx, user: str, *, reason: str = "No reason provided"):
 
 @bot.command()
 @staff_only()
-async def slowmode(ctx, seconds: int):
+async def slowmode(ctx, seconds: int, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -496,7 +511,7 @@ async def slowmode(ctx, seconds: int):
 
 @bot.command()
 @staff_only()
-async def setprefix(ctx, prefix):
+async def setprefix(ctx, prefix, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
@@ -507,38 +522,48 @@ async def setprefix(ctx, prefix):
 @bot.command()
 @staff_only()
 async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
-    err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err)
-    channel = ctx.channel
     try:
-        message = await channel.fetch_message(message_id)
+        message = await ctx.channel.fetch_message(message_id)
         await message.add_reaction(emoji)
 
-        @bot.event
-        async def on_raw_reaction_add(payload):
-            if payload.message_id == message_id and str(payload.emoji) == emoji:
-                guild = discord.utils.get(bot.guilds, id=payload.guild_id)
-                member = guild.get_member(payload.user_id)
-                if member:
-                    await member.add_roles(role)
+        # save mapping
+        reaction_roles[message_id] = (emoji, role.id)
+        save_reaction_roles()
 
-        @bot.event
-        async def on_raw_reaction_remove(payload):
-            if payload.message_id == message_id and str(payload.emoji) == emoji:
-                guild = discord.utils.get(bot.guilds, id=payload.guild_id)
-                member = guild.get_member(payload.user_id)
-                if member:
-                    await member.remove_roles(role)
-        await log_action(ctx, f"set up reaction role for {role.name} on message {message_id}")
-    except:
-        await ctx.send("Could not find message or add reaction.")
+        await ctx.send(f"✅ Reaction role set: {emoji} → {role.mention}")
+        await log_action(ctx, f"Set reaction role: {emoji} → {role.name} on message {message_id}")
+    except Exception as e:
+        await ctx.send("❌ Could not set reaction role.")
+        print(f"[ReactionRole Error] {e}")
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    data = reaction_roles.get(payload.message_id)
+    if not data or str(payload.emoji) != data[0]:
+        return
+    guild = discord.utils.get(bot.guilds, id=payload.guild_id)
+    if not guild:
+        return
+    member = guild.get_member(payload.user_id)
+    role = discord.utils.get(guild.roles, id=data[1])
+    if member and role:
+        await member.add_roles(role)
+
+@bot.event
+async def on_raw_reaction_remove(payload):
+    data = reaction_roles.get(payload.message_id)
+    if not data or str(payload.emoji) != data[0]:
+        return
+    guild = discord.utils.get(bot.guilds, id=payload.guild_id)
+    if not guild:
+        return
+    member = guild.get_member(payload.user_id)
+    role = discord.utils.get(guild.roles, id=data[1])
+    if member and role:
+        await member.remove_roles(role)
 
 @bot.command()
-async def userinfo(ctx, member: discord.Member):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
+async def userinfo(ctx, member: discord.Member, member: discord.Member = None):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
