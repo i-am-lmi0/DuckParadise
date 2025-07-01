@@ -6,6 +6,7 @@ import json
 from keep_alive import keep_alive
 from datetime import datetime
 import traceback
+from datetime import datetime
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -19,6 +20,19 @@ WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
 CONFIG_FILE = "config.json"
 REACTION_ROLE_FILE = "reaction_roles.json"
+AFK_FILE = "afk.json"
+
+def load_afk():
+    if os.path.exists(AFK_FILE):
+        with open(AFK_FILE, "r") as f:
+            return {int(k): v for k, v in json.load(f).items()}
+    return {}
+
+def save_afk():
+    with open(AFK_FILE, "w") as f:
+        json.dump({str(k): v for k, v in afk_data.items()}, f, indent=4)
+
+afk_data = load_afk()
 
 def load_reaction_roles():
     try:
@@ -147,6 +161,60 @@ async def resolve_member(ctx, arg):
             return await ctx.guild.fetch_member(int(arg))
         except:
             return None
+
+@bot.command()
+async def afk(ctx, *, reason="AFK"):
+    user_id = ctx.author.id
+    afk_data[user_id] = {"reason": reason, "time": datetime.utcnow().isoformat()}
+    save_afk()
+    try:
+        await ctx.author.edit(nick=f"[AFK] {ctx.author.display_name}")
+    except:
+        pass
+    await ctx.send(f"✅ {ctx.author.mention} is now AFK: {reason}")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # remove afk if the user is marked as afk and sends a message
+    if message.author.id in afk_data:
+        del afk_data[message.author.id]
+        save_afk()
+        try:
+            if message.author.display_name.startswith("[AFK] "):
+                new_nick = message.author.display_name.replace("[AFK] ", "", 1)
+                await message.author.edit(nick=new_nick)
+        except:
+            pass
+        await message.channel.send(f"🟢 Welcome back {message.author.mention}, I’ve removed your AFK status.")
+
+    # notify if user mentions any afk users
+    notified = set()
+    for user in message.mentions:
+        if user.id in afk_data and user.id not in notified:
+            reason = afk_data[user.id]["reason"]
+            try:
+                since = datetime.fromisoformat(afk_data[user.id]["time"])
+                delta = datetime.utcnow() - since
+                mins, secs = divmod(int(delta.total_seconds()), 60)
+                hrs, mins = divmod(mins, 60)
+                days, hrs = divmod(hrs, 24)
+                duration = (
+                    f"{days}d " if days else "" +
+                    f"{hrs}h " if hrs else "" +
+                    f"{mins}m " if mins else "" +
+                    f"{secs}s"
+                ).strip()
+                await message.channel.send(
+                    f"🔕 {user.display_name} is AFK: {reason} (since {duration} ago)"
+                )
+            except:
+                await message.channel.send(f"🔕 {user.display_name} is AFK: {reason}")
+            notified.add(user.id)
+
+    await bot.process_commands(message)
 
 @bot.command()
 @commands.has_permissions(administrator=True)
