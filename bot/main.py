@@ -464,7 +464,10 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided", member: di
 
 @bot.command()
 @staff_only()
-async def unban(ctx, *, user: str):
+async def unban(ctx, *, user: str, member: discord.Member = None):
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     try:
         user_id = int(user.strip("<@!>"))
         user_obj = await bot.fetch_user(user_id)
@@ -474,20 +477,6 @@ async def unban(ctx, *, user: str):
     except Exception as e:
         await ctx.send("❌ Failed to unban the user.")
         print(f"[Unban Error] {e}")
-
-@bot.command()
-@staff_only()
-async def unban(ctx, *, user: str, member: discord.Member = None):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
-    err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err)
-    user = await bot.fetch_user(user_id)
-    await ctx.guild.unban(user)
-    await ctx.send(f"Unbanned {user.mention}")
-    await log_action(ctx, f"unbanned {user}", user_id=user.id, action_type="unban")
 
 @bot.command()
 @staff_only()
@@ -589,7 +578,10 @@ async def setprefix(ctx, prefix, member: discord.Member = None):
 
 @bot.command()
 @staff_only()
-async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
+async def reactionrole(ctx, message_id: int, emoji, role: discord.Role, member: discord.Member = None):
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
     try:
         message = await ctx.channel.fetch_message(message_id)
         await message.add_reaction(emoji)
@@ -631,7 +623,7 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
 
 @bot.command()
-async def userinfo(ctx, member: discord.Member, member: discord.Member = None):
+async def userinfo(ctx, member: discord.Member):
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
