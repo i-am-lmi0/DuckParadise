@@ -572,7 +572,7 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    data = reaction_roles.get(payload.message_id)
+    data = reactionrole.get(payload.message_id)
     if not data or str(payload.emoji) != data[0]:
         return
     guild = discord.utils.get(bot.guilds, id=payload.guild_id)
