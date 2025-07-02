@@ -470,14 +470,25 @@ async def mute(ctx, user: str, duration: str = None, *, reason: str = "No reason
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+
+    # Permission checks
+    if member == ctx.author:
+        return await ctx.send("❌ You can't mute yourself.")
+    if member == ctx.guild.owner:
+        return await ctx.send("❌ You can't mute the server owner.")
+    if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
+        return await ctx.send("❌ You can't mute someone with an equal or higher role than you.")
+
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if not mute_role:
         mute_role = await ctx.guild.create_role(name="Muted")
         for channel in ctx.guild.channels:
             await channel.set_permissions(mute_role, speak=False, send_messages=False)
+
     await member.add_roles(mute_role)
     await ctx.send(f"Muted {member.mention} for reason: {reason}")
-    await log_action(ctx, f"muted {member} for: {reason} ({duration or 'indefinitely'})", ...)
+    await log_action(ctx, f"muted {member} for: {reason} ({duration or 'indefinitely'})", user_id=member.id, action_type="mute")
+
     if duration:
         seconds = convert_time(duration)
         if seconds:
@@ -601,73 +612,85 @@ async def on_raw_reaction_remove(payload):
 async def userinfo(ctx, member: discord.Member = None):
     member = member or ctx.author
 
-    roles = [role.name for role in member.roles if role.name != "@everyone"]
-    roles_string = ", ".join(roles) if roles else "None"
+    try:
+        roles = [role.name for role in member.roles if role.name != "@everyone"]
+        roles_string = ", ".join(roles) if roles else "None"
 
-    joined_at = member.joined_at.strftime("%B %d, %Y at %I:%M %p UTC") if member.joined_at else "Unknown"
-    created_at = member.created_at.strftime("%B %d, %Y at %I:%M %p UTC")
+        joined_at = member.joined_at.strftime("%B %d, %Y at %I:%M %p UTC") if member.joined_at else "Unknown"
+        created_at = member.created_at.strftime("%B %d, %Y at %I:%M %p UTC")
 
-    guild_id = str(ctx.guild.id)
-    user_id = str(member.id)
-    warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
+        guild_id = str(ctx.guild.id)
+        user_id = str(member.id)
+        warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
 
-    # create embed
-    embed = discord.Embed(
-        title=f"Complete User Info - {member}",
-        description=f"User data for {member.mention}",
-        color=discord.Color.blurple()
-    )
+        embed = discord.Embed(
+            title=f"Complete User Info - {member}",
+            description=f"User data for {member.mention}",
+            color=discord.Color.blurple()
+        )
 
-    embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
 
-    # basic identity
-    embed.add_field(name="Username", value=f"{member.name}#{member.discriminator}", inline=True)
-    embed.add_field(name="Display Name", value=member.display_name, inline=True)
-    embed.add_field(name="User ID", value=member.id, inline=True)
+        # Basic info
+        embed.add_field(name="Username", value=f"{member.name}#{member.discriminator}", inline=True)
+        embed.add_field(name="Display Name", value=member.display_name, inline=True)
+        embed.add_field(name="User ID", value=member.id, inline=True)
 
-    # dates
-    embed.add_field(name="Account Created", value=created_at, inline=False)
-    embed.add_field(name="Joined Server", value=joined_at, inline=False)
+        # Dates
+        embed.add_field(name="Account Created", value=created_at, inline=False)
+        embed.add_field(name="Joined Server", value=joined_at, inline=False)
 
-    # roles
-    embed.add_field(name="Roles", value=roles_string, inline=False)
-    embed.add_field(name="Top Role", value=member.top_role.name if member.top_role else "None", inline=True)
-    embed.add_field(name="Hoist Role", value=member.top_role.name if member.top_role and member.top_role.hoist else "None", inline=True)
+        # Roles
+        embed.add_field(name="Roles", value=roles_string, inline=False)
+        embed.add_field(name="Top Role", value=member.top_role.name if member.top_role else "None", inline=True)
+        embed.add_field(name="Hoist Role", value=member.top_role.name if member.top_role and member.top_role.hoist else "None", inline=True)
 
-    # status & activity
-    embed.add_field(name="Status", value=str(member.status).capitalize(), inline=True)
-    embed.add_field(name="Desktop Status", value=str(member.desktop_status).capitalize(), inline=True)
-    embed.add_field(name="Mobile Status", value=str(member.mobile_status).capitalize(), inline=True)
-    embed.add_field(name="Web Status", value=str(member.web_status).capitalize(), inline=True)
+        # Status & activity
+        embed.add_field(name="Status", value=str(member.status).capitalize(), inline=True)
+        embed.add_field(name="Desktop Status", value=str(member.desktop_status).capitalize(), inline=True)
+        embed.add_field(name="Mobile Status", value=str(member.mobile_status).capitalize(), inline=True)
+        embed.add_field(name="Web Status", value=str(member.web_status).capitalize(), inline=True)
 
-    # activity (if any)
-    activity = member.activity
-    if activity:
-        embed.add_field(name="Activity Type", value=str(activity.type).split('.')[-1].capitalize(), inline=True)
-        embed.add_field(name="Activity Name", value=activity.name, inline=True)
-        if hasattr(activity, 'details') and activity.details:
-            embed.add_field(name="Activity Details", value=activity.details, inline=True)
-        if hasattr(activity, 'state') and activity.state:
-            embed.add_field(name="Activity State", value=activity.state, inline=True)
+        # Activity (if any)
+        activity = member.activity
+        if activity:
+            embed.add_field(name="Activity Type", value=str(activity.type).split('.')[-1].capitalize(), inline=True)
+            embed.add_field(name="Activity Name", value=activity.name, inline=True)
+            if getattr(activity, 'details', None):
+                embed.add_field(name="Activity Details", value=activity.details, inline=True)
+            if getattr(activity, 'state', None):
+                embed.add_field(name="Activity State", value=activity.state, inline=True)
 
-    # other
-    embed.add_field(name="Is Bot", value="✅ Yes" if member.bot else "❌ No", inline=True)
-    embed.add_field(name="Is Timed Out?", value="✅ Yes" if member.timed_out else "❌ No", inline=True)
-    embed.add_field(name="Pending?", value="✅ Yes" if member.pending else "❌ No", inline=True)
-    embed.add_field(name="Boosting Since", value=member.premium_since.strftime("%B %d, %Y at %I:%M %p UTC") if member.premium_since else "Not boosting", inline=False)
+        # Other
+        embed.add_field(name="Is Bot", value="✅ Yes" if member.bot else "❌ No", inline=True)
+        embed.add_field(name="Is Timed Out?", value="✅ Yes" if getattr(member, "timed_out", False) else "❌ No", inline=True)
+        embed.add_field(name="Pending?", value="✅ Yes" if getattr(member, "pending", False) else "❌ No", inline=True)
+        embed.add_field(name="Boosting Since", value=member.premium_since.strftime("%B %d, %Y at %I:%M %p UTC") if member.premium_since else "Not boosting", inline=False)
 
-    # permissions
-    permissions = [perm[0].replace('_', ' ').title() for perm in member.guild_permissions if perm[1]]
-    permissions_str = ', '.join(permissions) if permissions else "None"
-    embed.add_field(name="Guild Permissions", value=permissions_str, inline=False)
+        # Permissions
+        permissions = [perm[0].replace('_', ' ').title() for perm in member.guild_permissions if perm[1]]
+        permissions_str = ', '.join(permissions) if permissions else "None"
+        embed.add_field(name="Guild Permissions", value=permissions_str, inline=False)
 
-    # warnings
-    embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
+        # Warnings
+        embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
 
-    # avatar
-    embed.set_image(url=member.banner.url if hasattr(member, "banner") and member.banner else "")
+        # Avatar banner
+        banner_url = ""
+        if hasattr(member, "banner") and member.banner:
+            try:
+                banner_url = member.banner.url
+            except Exception:
+                banner_url = ""
 
-    await ctx.send(embed=embed)
+        if banner_url:
+            embed.set_image(url=banner_url)
+
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send("❗ An error occurred while fetching user info.")
+        print(f"[UserInfo Error] {e}")
 
 @bot.command()
 async def serverinfo(ctx):
