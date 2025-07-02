@@ -9,6 +9,8 @@ import traceback
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
+reaction_roles = load_reaction_roles()
+
 intents = discord.Intents.all()
 
 WARNINGS_FILE = "warnings.json"
