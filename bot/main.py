@@ -6,21 +6,24 @@ import json
 from keep_alive import keep_alive
 from datetime import datetime
 import traceback
-from datetime import datetime
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
 intents = discord.Intents.all()
-
-bot = commands.Bot(command_prefix="?", intents=intents)
-log_channel_id = None
-staff_role_id = None
 
 WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
 CONFIG_FILE = "config.json"
 REACTION_ROLE_FILE = "reaction_roles.json"
 AFK_FILE = "afk.json"
+
+def get_prefix(bot, message):
+    guild_id = str(message.guild.id) if message.guild else None
+    return config.get("prefixes", {}).get(guild_id, "?")
+
+bot = commands.Bot(command_prefix=get_prefix, intents=intents)
+log_channel_id = None
+staff_role_id = None
 
 def load_afk():
     if os.path.exists(AFK_FILE):
@@ -218,7 +221,7 @@ async def on_message(message):
 
 @bot.command()
 @staff_only()
-async def testwelcome(ctx):
+async def testwelcome(ctx, member: discord.Member = None):
     member = member or ctx.author
     gid = str(ctx.guild.id)
     channel_id = config.get("welcome_channels", {}).get(gid)
@@ -227,7 +230,7 @@ async def testwelcome(ctx):
     channel = bot.get_channel(channel_id)
     if not channel:
         return await ctx.send("⚠️ Could not find welcome channel.")
-    
+
     embed = discord.Embed(
         title="Welcome to Duck Paradise 🦆",
         description=(
@@ -245,7 +248,7 @@ async def testwelcome(ctx):
 
 @bot.command()
 @staff_only()
-async def testboost(ctx):
+async def testboost(ctx, member: discord.Member = None):
     member = member or ctx.author
     gid = str(ctx.guild.id)
     channel_id = config.get("boost_channels", {}).get(gid)
@@ -532,15 +535,22 @@ async def slowmode(ctx, seconds: int):
     await log_action(ctx, f"set slowmode to {seconds}s in #{ctx.channel.name}")
 
 @bot.command()
-@staff_only()
-async def setprefix(ctx, prefix):
-    bot.command_prefix = prefix
-    await ctx.send(f"Prefix changed to: `{prefix}`")
-    await log_action(ctx, f"changed prefix to: {prefix}")
+async def setprefix(ctx, new_prefix):
+    if not ctx.guild:
+        return await ctx.send("❌ This command can't be used in DMs.")
+
+    staff_roles = config.get("staff_roles", {}).get(str(ctx.guild.id), [])
+    if not any(role.id in staff_roles for role in ctx.author.roles):
+        return await ctx.send("❌ You do not have permission to use this command.")
+
+    guild_id = str(ctx.guild.id)
+    config.setdefault("prefixes", {})[guild_id] = new_prefix
+    save_config(config)
+    await ctx.send(f"✅ Prefix updated to `{new_prefix}`")
 
 @bot.command()
 @staff_only()
-async def reactionrole(ctx, message_id: int, emoji, role: discord.Rolee):
+async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
     try:
         message = await ctx.channel.fetch_message(message_id)
         await message.add_reaction(emoji)
@@ -583,13 +593,15 @@ async def on_raw_reaction_remove(payload):
 
 @bot.command()
 @staff_only()
-async def userinfo(ctx):
+async def userinfo(ctx, member: discord.Member = None):
+    member = member or ctx.author
+
     roles = [role.name for role in member.roles if role.name != "@everyone"]
     roles_string = ", ".join(roles) if roles else "None"
-    
+
     joined_at = member.joined_at.strftime("%B %d, %Y at %I:%M %p UTC") if member.joined_at else "Unknown"
     created_at = member.created_at.strftime("%B %d, %Y at %I:%M %p UTC")
-    
+
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
     warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
@@ -600,7 +612,7 @@ async def userinfo(ctx):
         description=f"User data for {member.mention}",
         color=discord.Color.blurple()
     )
-    
+
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
 
     # basic identity
