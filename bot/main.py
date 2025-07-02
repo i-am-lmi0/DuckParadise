@@ -118,12 +118,15 @@ def staff_only():
     async def predicate(ctx):
         guild_id = str(ctx.guild.id)
         role_id = config.get("staff_roles", {}).get(guild_id)
+        print(f"Checking staff role: guild {guild_id} role_id {role_id} for user {ctx.author}")
         if not role_id:
             await ctx.send("⚠️ Staff role is not set for this server.")
             return False
         role = discord.utils.get(ctx.guild.roles, id=role_id)
-        if role and role in ctx.author.roles:
-            return True
+        if role:
+            print(f"Found role: {role.name}, user roles: {[r.name for r in ctx.author.roles]}")
+            if role in ctx.author.roles:
+                return True
         await ctx.send("❌ You don't have the staff role required to run this command.")
         return False
     return commands.check(predicate)
@@ -539,8 +542,10 @@ async def setprefix(ctx, new_prefix):
     if not ctx.guild:
         return await ctx.send("❌ This command can't be used in DMs.")
 
-    staff_roles = config.get("staff_roles", {}).get(str(ctx.guild.id), [])
-    if not any(role.id in staff_roles for role in ctx.author.roles):
+    staff_role_id = config.get("staff_roles", {}).get(str(ctx.guild.id))
+    if staff_role_id is None:
+        return await ctx.send("❌ Staff role not set for this server.")
+    if staff_role_id not in [role.id for role in ctx.author.roles]:
         return await ctx.send("❌ You do not have permission to use this command.")
 
     guild_id = str(ctx.guild.id)
