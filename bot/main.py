@@ -443,6 +443,11 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
+
     try:
         await member.kick(reason=f"{reason} (by {ctx.author})")
         await ctx.send(f"Kicked {member.mention}")
@@ -450,6 +455,25 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided"):
     except Exception as e:
         await ctx.send("❌ Failed to kick the user.")
         print(f"[Kick Error] {e}")
+
+@bot.command()
+@staff_only()
+async def ban(ctx, user: str, *, reason: str = "No reason provided"):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
+
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
+
+    try:
+        await ctx.guild.ban(member, reason=f"{reason} (by {ctx.author})")
+        await ctx.send(f"Banned {member.mention}")
+        await log_action(ctx, f"banned {member} for: {reason}", user_id=member.id, action_type="ban")
+    except Exception as e:
+        await ctx.send("❌ Failed to ban the user.")
+        print(f"[Ban Error] {e}")
 
 @bot.command()
 @staff_only()
@@ -505,6 +529,11 @@ async def unmute(ctx, *, user: str):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
+
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if mute_role in member.roles:
         await member.remove_roles(mute_role)
@@ -526,6 +555,11 @@ async def warn(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+
+    err = check_target_permission(ctx, member)
+    if err:
+        return await ctx.send(err)
+
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
     if guild_id not in warnings_data:
@@ -569,17 +603,23 @@ async def setprefix(ctx, new_prefix):
 async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
     try:
         message = await ctx.channel.fetch_message(message_id)
+    except discord.NotFound:
+        return await ctx.send("❌ Message not found. Please check the message ID.")
+    except discord.Forbidden:
+        return await ctx.send("❌ I don't have permission to fetch that message.")
+    except discord.HTTPException as e:
+        return await ctx.send(f"❌ Failed to fetch the message: {e}")
+
+    try:
         await message.add_reaction(emoji)
+    except discord.HTTPException:
+        return await ctx.send("❌ Failed to add the emoji reaction. Make sure it's a valid emoji.")
 
-        # save mapping
-        reaction_roles[message_id] = (emoji, role.id)
-        save_reaction_roles()
+    reaction_roles[message_id] = (emoji, role.id)
+    save_reaction_roles()
 
-        await ctx.send(f"✅ Reaction role set: {emoji} → {role.mention}")
-        await log_action(ctx, f"Set reaction role: {emoji} → {role.name} on message {message_id}")
-    except Exception as e:
-        await ctx.send("❌ Could not set reaction role.")
-        print(f"[ReactionRole Error] {e}")
+    await ctx.send(f"✅ Reaction role set: {emoji} → {role.mention}")
+    await log_action(ctx, f"Set reaction role: {emoji} → {role.name} on message {message_id}")
 
 @bot.event
 async def on_raw_reaction_add(payload):
