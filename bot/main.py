@@ -378,6 +378,7 @@ async def cmds(ctx):
 ?unmute @user
 ?purge <number>
 ?warn @user <reason>
+?clearwarns @user
 ?slowmode <seconds>
 ?setprefix <new prefix>
 ?reactionrole <message_id> <emoji> @role
@@ -408,12 +409,12 @@ async def cmds(ctx):
 @bot.command()
 async def staffset(ctx, role: discord.Role):
     if ctx.author != ctx.guild.owner:
-        return await ctx.send("❌ Only the server owner can set the staff role.")
+        return await ctx.send("❌ Only the server owner can set the staff role.", delete_after=7)
     guild_id = str(ctx.guild.id)
     config.setdefault("staff_roles", {})
     config["staff_roles"][guild_id] = role.id
     save_config(config)
-    await ctx.send(f"✅ Staff role set to {role.mention}")
+    await ctx.send(f"✅ Staff role set to {role.mention}", delete_after=7)
     await log_action(ctx, f"Set staff role to {role.name} (ID: {role.id})")
     
 @bot.command()
@@ -421,12 +422,12 @@ async def staffget(ctx):
     guild_id = str(ctx.guild.id)
     role_id = config.get("staff_roles", {}).get(guild_id)
     if not role_id:
-        return await ctx.send("❌ No staff role has been set for this server.")
+        return await ctx.send("❌ No staff role has been set for this server.", delete_after=7)
     role = discord.utils.get(ctx.guild.roles, id=role_id)
     if role:
-        await ctx.send(f"Staff role is set to {role.mention}")
+        await ctx.send(f"Staff role is set to {role.mention}", delete_after=7)
     else:
-        await ctx.send("⚠️ The saved staff role ID does not exist anymore. Please re-set it using `?staffset @role`.")
+        await ctx.send("⚠️ The saved staff role ID does not exist anymore. Please re-set it using `?staffset @role`.", delete_after=7)
 
 @bot.command()
 @staff_only()
@@ -436,7 +437,7 @@ async def logchannel(ctx, channel: discord.TextChannel):
         config["log_channels"] = {}
     config["log_channels"][guild_id] = channel.id
     save_config(config)
-    await ctx.send(f"✅ Log channel set to {channel.mention} for this server.")
+    await ctx.send(f"✅ Log channel set to {channel.mention} for this server.", delete_after=7)
     await log_action(ctx, f"Set log channel to {channel.mention}")
 
 @bot.command()
@@ -445,15 +446,18 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
-
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
-
     try:
         await member.kick(reason=f"{reason} (by {ctx.author})")
         await ctx.send(f"Kicked {member.mention}")
         await log_action(ctx, f"kicked {member} for: {reason}", user_id=member.id, action_type="kick")
+    try:
+        await member.send(f"🚫 You have been kicked from **{ctx.guild.name}** for: {reason}")
+    except:
+        await log_action(ctx, f"Failed to DM kick message to {member} (ID: {member.id})")
+
     except Exception as e:
         await ctx.send("❌ Failed to kick the user.")
         print(f"[Kick Error] {e}")
@@ -463,18 +467,23 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided"):
 async def ban(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
-        return await ctx.send("❌ Could not find that user.")
+        return await ctx.send("❌ Could not find that user.", delete_after=7)
 
     err = check_target_permission(ctx, member)
     if err:
-        return await ctx.send(err)
+        return await ctx.send(err, delete_after=7)
 
     try:
-        await ctx.guild.ban(member, reason=f"{reason} (by {ctx.author})")
-        await ctx.send(f"Banned {member.mention}")
+        try:
+            await member.send(f"⛔ You have been banned from **{ctx.guild.name}** for: {reason}")
+        except:
+            await log_action(ctx, f"Failed to DM ban message to {member} (ID: {member.id})")
+
+        await member.ban(reason=f"{reason} (by {ctx.author})")
+        await ctx.send(f"{member} has been banned.", delete_after=7)
         await log_action(ctx, f"banned {member} for: {reason}", user_id=member.id, action_type="ban")
     except Exception as e:
-        await ctx.send("❌ Failed to ban the user.")
+        await ctx.send("❌ Failed to ban the user.", delete_after=7)
         print(f"[Ban Error] {e}")
 
 @bot.command()
@@ -484,7 +493,7 @@ async def unban(ctx, *, user: str):
         user_id = int(user.strip("<@!>"))
         user_obj = await bot.fetch_user(user_id)
         await ctx.guild.unban(user_obj)
-        await ctx.send(f"✅ Unbanned {user_obj.mention}")
+        await ctx.send(f"✅ Unbanned {user_obj.mention}", delete_after=7)
         await log_action(ctx, f"unbanned {user_obj}", user_id=user_obj.id, action_type="unban")
     except Exception as e:
         await ctx.send("❌ Failed to unban the user.")
@@ -548,7 +557,7 @@ async def unmute(ctx, *, user: str):
 @staff_only()
 async def purge(ctx, amount: int):
     await ctx.channel.purge(limit=amount + 1)
-    await ctx.send(f"Deleted {amount} messages.", delete_after=5)
+    await ctx.send(f"Deleted {amount} messages.", delete_after=7)
     await log_action(ctx, f"purged {amount} messages in #{ctx.channel.name}")
 
 @bot.command()
@@ -557,11 +566,9 @@ async def warn(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
-
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
-
     guild_id = str(ctx.guild.id)
     user_id = str(member.id)
     if guild_id not in warnings_data:
@@ -576,24 +583,42 @@ async def warn(ctx, user: str, *, reason: str = "No reason provided"):
     except:
         await log_action(ctx, f"Failed to DM warn message to {member} (ID: {member.id})")
     await log_action(ctx, f"warned {member} for: {reason}", user_id=member.id, action_type="warn")
+    
+@bot.command()
+@staff_only()
+async def clearwarns(ctx, user: str):
+    member = await resolve_member(ctx, user)
+    if not member:
+        return await ctx.send("❌ Could not find that user.")
+
+    guild_id = str(ctx.guild.id)
+    user_id = str(member.id)
+
+    if guild_id in warnings_data and user_id in warnings_data[guild_id]:
+        del warnings_data[guild_id][user_id]
+        save_warnings(warnings_data)
+        await ctx.send(f"✅ Cleared all warnings for {member.mention}")
+        await log_action(ctx, f"Cleared all warnings for {member}", user_id=member.id, action_type="clearwarns")
+    else:
+        await ctx.send(f"ℹ️ {member.mention} has no warnings.")
 
 @bot.command()
 @staff_only()
 async def slowmode(ctx, seconds: int):
     await ctx.channel.edit(slowmode_delay=seconds)
-    await ctx.send(f"Set slowmode to {seconds} seconds.")
+    await ctx.send(f"Set slowmode to {seconds} seconds.", delete_after=7)
     await log_action(ctx, f"set slowmode to {seconds}s in #{ctx.channel.name}")
 
 @bot.command()
 async def setprefix(ctx, new_prefix):
     if not ctx.guild:
-        return await ctx.send("❌ This command can't be used in DMs.")
+        return await ctx.send("❌ This command can't be used in DMs.", delete_after=7)
 
     staff_role_id = config.get("staff_roles", {}).get(str(ctx.guild.id))
     if staff_role_id is None:
-        return await ctx.send("❌ Staff role not set for this server.")
+        return await ctx.send("❌ Staff role not set for this server.", delete_after=7)
     if staff_role_id not in [role.id for role in ctx.author.roles]:
-        return await ctx.send("❌ You do not have permission to use this command.")
+        return await ctx.send("❌ You do not have permission to use this command.", delete_after=7)
 
     guild_id = str(ctx.guild.id)
     config.setdefault("prefixes", {})[guild_id] = new_prefix
@@ -606,11 +631,11 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
     try:
         message = await ctx.channel.fetch_message(message_id)
     except discord.NotFound:
-        return await ctx.send("❌ Message not found. Please check the message ID.")
+        return await ctx.send("❌ Message not found. Please check the message ID.", delete_after=7)
     except discord.Forbidden:
-        return await ctx.send("❌ I don't have permission to fetch that message.")
+        return await ctx.send("❌ I don't have permission to fetch that message.", delete_after=7)
     except discord.HTTPException as e:
-        return await ctx.send(f"❌ Failed to fetch the message: {e}")
+        return await ctx.send(f"❌ Failed to fetch the message: {e}", delete_after=7)
 
     try:
         await message.add_reaction(emoji)
@@ -620,7 +645,7 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
     reaction_roles[message_id] = (emoji, role.id)
     save_reaction_roles()
 
-    await ctx.send(f"✅ Reaction role set: {emoji} → {role.mention}")
+    await ctx.send(f"✅ Reaction role set: {emoji} → {role.mention}", delete_after=7)
     await log_action(ctx, f"Set reaction role: {emoji} → {role.name} on message {message_id}")
 
 @bot.event
@@ -673,27 +698,27 @@ async def userinfo(ctx, member: discord.Member = None):
 
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
 
-        # Basic info
+        # basic info
         embed.add_field(name="Username", value=f"{member.name}#{member.discriminator}", inline=True)
         embed.add_field(name="Display Name", value=member.display_name, inline=True)
         embed.add_field(name="User ID", value=member.id, inline=True)
 
-        # Dates
+        # dates
         embed.add_field(name="Account Created", value=created_at, inline=False)
         embed.add_field(name="Joined Server", value=joined_at, inline=False)
 
-        # Roles
+        # roles
         embed.add_field(name="Roles", value=roles_string, inline=False)
         embed.add_field(name="Top Role", value=member.top_role.name if member.top_role else "None", inline=True)
         embed.add_field(name="Hoist Role", value=member.top_role.name if member.top_role and member.top_role.hoist else "None", inline=True)
 
-        # Status & activity
+        # status & activity
         embed.add_field(name="Status", value=str(member.status).capitalize(), inline=True)
         embed.add_field(name="Desktop Status", value=str(member.desktop_status).capitalize(), inline=True)
         embed.add_field(name="Mobile Status", value=str(member.mobile_status).capitalize(), inline=True)
         embed.add_field(name="Web Status", value=str(member.web_status).capitalize(), inline=True)
 
-        # Activity (if any)
+        # activity (if any)
         activity = member.activity
         if activity:
             embed.add_field(name="Activity Type", value=str(activity.type).split('.')[-1].capitalize(), inline=True)
@@ -703,21 +728,31 @@ async def userinfo(ctx, member: discord.Member = None):
             if getattr(activity, 'state', None):
                 embed.add_field(name="Activity State", value=activity.state, inline=True)
 
-        # Other
+        # other
         embed.add_field(name="Is Bot", value="✅ Yes" if member.bot else "❌ No", inline=True)
         embed.add_field(name="Is Timed Out?", value="✅ Yes" if getattr(member, "timed_out", False) else "❌ No", inline=True)
         embed.add_field(name="Pending?", value="✅ Yes" if getattr(member, "pending", False) else "❌ No", inline=True)
         embed.add_field(name="Boosting Since", value=member.premium_since.strftime("%B %d, %Y at %I:%M %p UTC") if member.premium_since else "Not boosting", inline=False)
 
-        # Permissions
+        # permissions
         permissions = [perm[0].replace('_', ' ').title() for perm in member.guild_permissions if perm[1]]
         permissions_str = ', '.join(permissions) if permissions else "None"
         embed.add_field(name="Guild Permissions", value=permissions_str, inline=False)
 
-        # Warnings
-        embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
+        # list individual warnings if any
+        user_warnings = warnings_data.get(guild_id, {}).get(user_id, [])
+        if user_warnings:
+            for i, w in enumerate(user_warnings[:3], 1):
+                reason = w.get("reason", "No reason")
+                by = w.get("by", "Unknown")
+                time = w.get("time", "Unknown")
+                embed.add_field(
+                    name=f"⚠️ Warning {i}",
+                    value=f"**By:** {by}\n**Reason:** {reason}\n**Time:** <t:{int(datetime.fromisoformat(time).timestamp())}:R>",
+                    inline=False
+                )
 
-        # Avatar banner
+        # avatar banner
         banner_url = ""
         if hasattr(member, "banner") and member.banner:
             try:
