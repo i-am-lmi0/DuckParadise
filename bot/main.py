@@ -739,18 +739,26 @@ async def userinfo(ctx, member: discord.Member = None):
         permissions_str = ', '.join(permissions) if permissions else "None"
         embed.add_field(name="Guild Permissions", value=permissions_str, inline=False)
 
+        # warnings
+        embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
+        
         # list individual warnings if any
         user_warnings = warnings_data.get(guild_id, {}).get(user_id, [])
-        if user_warnings:
-            for i, w in enumerate(user_warnings[:3], 1):
+        for i, w in enumerate(user_warnings[:3], 1):  # show up to 3 warnings
+            try:
                 reason = w.get("reason", "No reason")
                 by = w.get("by", "Unknown")
                 time = w.get("time", "Unknown")
+                timestamp = int(datetime.fromisoformat(time).timestamp()) if time != "Unknown" else "Unknown"
+                time_str = f"<t:{timestamp}:R>" if timestamp != "Unknown" else "Unknown"
                 embed.add_field(
                     name=f"⚠️ Warning {i}",
-                    value=f"**By:** {by}\n**Reason:** {reason}\n**Time:** <t:{int(datetime.fromisoformat(time).timestamp())}:R>",
+                    value=f"**By:** {by}\n**Reason:** {reason}\n**Time:** {time_str}",
                     inline=False
                 )
+            except Exception as e:
+                print(f"[Warning parse error] {e}")
+
 
         # avatar banner
         banner_url = ""
