@@ -6,6 +6,8 @@ import json
 from keep_alive import keep_alive
 from datetime import datetime
 import traceback
+from discord import Embed, ButtonStyle, Interaction
+from discord.ui import View, Button
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -378,48 +380,123 @@ async def on_command_error(ctx, error):
         traceback.print_exception(type(error), error, error.__traceback__)
         print("--- Traceback End ---")
 
+class CommandPages(View):
+    def __init__(self, embeds):
+        super().__init__(timeout=None)
+        self.embeds = embeds
+        self.current_page = 0
+        self.total_pages = len(embeds)
+
+        # add navigation buttons
+        self.prev_button = Button(label="Previous", style=ButtonStyle.secondary)
+        self.next_button = Button(label="Next", style=ButtonStyle.secondary)
+
+        self.prev_button.callback = self.previous_page
+        self.next_button.callback = self.next_page
+
+        self.add_item(self.prev_button)
+        self.add_item(self.next_button)
+
+    async def update_buttons(self, interaction: Interaction):
+        # disable buttons when at the ends
+        self.prev_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page == self.total_pages - 1
+        await interaction.response.edit_message(embed=self.embeds[self.current_page], view=self)
+
+    async def previous_page(self, interaction: Interaction):
+        if self.current_page > 0:
+            self.current_page -= 1
+            await self.update_buttons(interaction)
+
+    async def next_page(self, interaction: Interaction):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            await self.update_buttons(interaction)
+
+class CommandPages(View):
+    def __init__(self, embeds):
+        super().__init__(timeout=None)
+        self.embeds = embeds
+        self.current_page = 0
+        self.total_pages = len(embeds)
+
+        # add navigation buttons
+        self.prev_button = Button(label="Previous", style=ButtonStyle.secondary)
+        self.next_button = Button(label="Next", style=ButtonStyle.secondary)
+
+        self.prev_button.callback = self.previous_page
+        self.next_button.callback = self.next_page
+
+        self.add_item(self.prev_button)
+        self.add_item(self.next_button)
+
+    async def update_buttons(self, interaction: Interaction):
+        self.prev_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page == self.total_pages - 1
+        await interaction.response.edit_message(embed=self.embeds[self.current_page], view=self)
+
+    async def previous_page(self, interaction: Interaction):
+        if self.current_page > 0:
+            self.current_page -= 1
+            await self.update_buttons(interaction)
+
+    async def next_page(self, interaction: Interaction):
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            await self.update_buttons(interaction)
+
 @bot.command()
 async def cmds(ctx):
-    embed = discord.Embed(title="Command List", color=discord.Color.blue())
-    embed.add_field(
-        name="Staff-only Commands",
-        value="""
-?kick @user <reason>
-?ban @user <reason>
-?unban <user_id>
-?mute @user <duration> <reason>
-?unmute @user
-?purge <number>
-?warn @user <reason>
-?clearwarns @user
-?slowmode <seconds>
-?setprefix <new prefix>
-?reactionrole <message_id> <emoji> @role
-?logchannel #channel
-?userinfo @user
-?staffset @role
-?setwelcome #channel
-?setboost #channel
-?testwelcome
-?testwelcome @user
-?testboost
-?testboost @user
-?stickynote
-?unstickynote
-        """,
-        inline=False
-    )
-    embed.add_field(
-        name="General Commands",
-        value="""
-?serverinfo
-?cmds
-?staffget
-?afk <reason>
-        """,
-        inline=False
-    )
-    await ctx.send(embed=embed)
+    staff_role = ctx.guild.get_role(staff_role_id) if staff_role_id else None
+    is_staff = staff_role in ctx.author.roles if staff_role else False
+
+    general = Embed(title="💬 General Commands", color=discord.Color.blurple())
+    general.add_field(name="?serverinfo", value="*View server information*", inline=False)
+    general.add_field(name="?cmds", value="*Show this help menu*", inline=False)
+    general.add_field(name="?staffget", value="*Check the currently set staff role*", inline=False)
+    general.add_field(name="?afk [reason]", value="*Set your AFK status*", inline=False)
+
+    staff = Embed(title="🛠️ Staff-only Commands", color=discord.Color.blurple())
+    staff.add_field(name="?kick @user [reason]", value="*Kick a member*", inline=False)
+    staff.add_field(name="?ban @user [reason]", value="*Ban a member*", inline=False)
+    staff.add_field(name="?unban <user_id>", value="*Unban a user*", inline=False)
+    staff.add_field(name="?mute @user <time> [reason]", value="*Temporarily mute a user*", inline=False)
+    staff.add_field(name="?unmute @user", value="*Unmute a user*", inline=False)
+    staff.add_field(name="?purge <count>", value="*Bulk delete messages*", inline=False)
+    staff.add_field(name="?warn @user [reason]", value="*Warn a user*", inline=False)
+    staff.add_field(name="?clearwarns @user", value="*Clear all user warnings*", inline=False)
+    staff.add_field(name="?slowmode <seconds>", value="*Set channel slowmode*", inline=False)
+    staff.add_field(name="?setprefix <prefix>", value="*Change the bot prefix*", inline=False)
+    staff.add_field(name="?reactionrole <msg_id> <emoji> @role", value="*Set reaction role*", inline=False)
+    staff.add_field(name="?logchannel #channel", value="*Set moderation log channel*", inline=False)
+    staff.add_field(name="?userinfo [@user]", value="*Detailed user info*", inline=False)
+    staff.add_field(name="?staffset @role", value="*Set the staff role*", inline=False)
+    staff.add_field(name="?setwelcome #channel", value="*Set welcome message channel*", inline=False)
+    staff.add_field(name="?setboost #channel", value="*Set boost message channel*", inline=False)
+    staff.add_field(name="?testwelcome [@user]", value="*Test welcome message*", inline=False)
+    staff.add_field(name="?testboost [@user]", value="*Test boost message*", inline=False)
+    staff.add_field(name="?stickynote", value="*Set a sticky message in a channel*", inline=False)
+    staff.add_field(name="?unstickynote", value="*Remove sticky message*", inline=False)
+
+    economy = Embed(title="💰 Economy Commands", color=discord.Color.blurple())
+    economy.add_field(name="?bal", value="*Check your balance*", inline=False)
+    economy.add_field(name="?daily", value="*Claim your daily reward*", inline=False)
+    economy.add_field(name="?work", value="*Earn money by working*", inline=False)
+    economy.add_field(name="?beg", value="*Beg for money*", inline=False)
+    economy.add_field(name="?dep [amount]", value="*Deposit to bank*", inline=False)
+    economy.add_field(name="?with [amount]", value="*Withdraw from bank*", inline=False)
+    economy.add_field(name="?shop", value="*View shop items*", inline=False)
+    economy.add_field(name="?buy <item>", value="*Buy an item from the shop*", inline=False)
+    economy.add_field(name="?inventory", value="*View your items*", inline=False)
+    economy.add_field(name="?use <item>", value="*Use an item from your inventory*", inline=False)
+    economy.add_field(name="?give @user <amount>", value="*Give money to another user*", inline=False)
+
+    if is_staff:
+        view = CommandPages([general, staff, economy])
+    else:
+        view = CommandPages([general, economy])
+
+    await ctx.send(embed=view.embeds[0], view=view)
 
 @bot.command()
 async def staffset(ctx, role: discord.Role):
