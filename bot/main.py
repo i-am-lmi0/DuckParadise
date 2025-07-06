@@ -9,8 +9,6 @@ import traceback
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
-reaction_roles = load_reaction_roles()
-
 intents = discord.Intents.all()
 
 WARNINGS_FILE = "warnings.json"
@@ -47,6 +45,8 @@ def load_reaction_roles():
     except Exception as e:
         print(f"Failed to load reaction roles: {e}")
     return {}
+    
+reaction_roles = load_reaction_roles()
 
 def save_reaction_roles():
     try:
