@@ -13,6 +13,12 @@ TOKEN = os.environ["DISCORD_TOKEN"]
 
 intents = discord.Intents.all()
 
+shop_items = {
+    "apple": {"price": 50, "description": "🍎 A juicy apple. Heals 5 HP."},
+    "laptop": {"price": 1500, "description": "💻 Needed to work and earn coins."},
+    "fishing_rod": {"price": 800, "description": "🎣 Lets you fish for items."},
+}
+
 WARNINGS_FILE = "warnings.json"
 ACTIONS_FILE = "actions.json"
 CONFIG_FILE = "config.json"
