@@ -16,6 +16,19 @@ ACTIONS_FILE = "actions.json"
 CONFIG_FILE = "config.json"
 REACTION_ROLE_FILE = "reaction_roles.json"
 AFK_FILE = "afk.json"
+STICKY_PATH = "stickynotes.json"
+
+def load_sticky_notes():
+    if os.path.exists(STICKY_PATH):
+        with open(STICKY_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_sticky_notes(data):
+    with open(STICKY_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+sticky_notes = load_sticky_notes()
 
 def get_prefix(bot, message):
     guild_id = str(message.guild.id) if message.guild else None
@@ -391,6 +404,8 @@ async def cmds(ctx):
 ?testwelcome @user
 ?testboost
 ?testboost @user
+?stickynote
+?unstickynote
         """,
         inline=False
     )
@@ -627,6 +642,91 @@ async def setprefix(ctx, new_prefix):
     config.setdefault("prefixes", {})[guild_id] = new_prefix
     save_config(config)
     await ctx.send(f"✅ Prefix updated to `{new_prefix}`")
+    
+@bot.command()
+@staff_only()
+async def stickynote(ctx):
+    await ctx.send("📝 Please type the sticky message you'd like to set for this channel.")
+
+    def check(msg):
+        return msg.author == ctx.author and msg.channel == ctx.channel
+
+    try:
+        reply = await bot.wait_for("message", check=check, timeout=60.0)
+    except asyncio.TimeoutError:
+        return await ctx.send("⏰ Timed out. Please run `?stickynote` again.")
+
+    guild_id = str(ctx.guild.id)
+    channel_id = str(ctx.channel.id)
+
+    # Delete old sticky if it exists
+    if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
+        try:
+            old_msg = await ctx.channel.fetch_message(int(sticky_notes[guild_id][channel_id]["message_id"]))
+            await old_msg.delete()
+        except:
+            pass
+
+    # Send and save new sticky
+    sticky = await ctx.send(f"📌 **Sticky Note:** {reply.content}")
+
+    if guild_id not in sticky_notes:
+        sticky_notes[guild_id] = {}
+
+    sticky_notes[guild_id][channel_id] = {
+        "message": reply.content,
+        "message_id": str(sticky.id)
+    }
+
+    save_sticky_notes(sticky_notes)
+
+    await ctx.send("✅ Sticky note set successfully!", delete_after=7)
+    await ctx.message.delete(delay=7)
+    await reply.delete(delay=7)
+    
+@bot.event
+async def on_message(message):
+    await bot.process_commands(message)
+
+    if message.author.bot:
+        return
+
+    channel_id = str(message.channel.id)
+    if channel_id in sticky_notes:
+        try:
+            old_msg_id = int(sticky_notes[channel_id]["message_id"])
+            old_msg = await message.channel.fetch_message(old_msg_id)
+            await old_msg.delete()
+        except:
+            pass
+
+        new_msg = await message.channel.send(f"📌 **Sticky Note:** {sticky_notes[channel_id]['message']}")
+        sticky_notes[channel_id]["message_id"] = str(new_msg.id)
+        save_sticky_notes(sticky_notes)
+        
+@bot.command()
+@staff_only()
+async def unstickynote(ctx):
+    guild_id = str(ctx.guild.id)
+    channel_id = str(ctx.channel.id)
+
+    if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
+        try:
+            msg_id = int(sticky_notes[guild_id][channel_id]["message_id"])
+            msg = await ctx.channel.fetch_message(msg_id)
+            await msg.delete()
+        except:
+            pass
+
+        del sticky_notes[guild_id][channel_id]
+        if not sticky_notes[guild_id]:
+            del sticky_notes[guild_id]
+        save_sticky_notes(sticky_notes)
+
+        await ctx.send("✅ Sticky note removed for this channel.", delete_after=7)
+        await ctx.message.delete(delay=7)
+    else:
+        await ctx.send("⚠️ No sticky note found for this channel.", delete_after=7)
 
 @bot.command()
 @staff_only()
