@@ -45,8 +45,6 @@ def load_reaction_roles():
     except Exception as e:
         print(f"Failed to load reaction roles: {e}")
     return {}
-    
-reaction_roles = load_reaction_roles()
 
 def save_reaction_roles():
     try:
@@ -54,6 +52,8 @@ def save_reaction_roles():
             json.dump({str(k): v for k, v in reaction_roles.items()}, f, indent=4)
     except Exception as e:
         print(f"Failed to save reaction roles: {e}")
+
+reaction_roles = load_reaction_roles()
 
 def load_config():
     try:
