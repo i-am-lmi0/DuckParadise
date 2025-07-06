@@ -446,20 +446,23 @@ async def kick(ctx, user: str, *, reason: str = "No reason provided"):
     member = await resolve_member(ctx, user)
     if not member:
         return await ctx.send("❌ Could not find that user.")
+
     err = check_target_permission(ctx, member)
     if err:
         return await ctx.send(err)
+
     try:
         await member.kick(reason=f"{reason} (by {ctx.author})")
-        await ctx.send(f"Kicked {member.mention}")
+        await ctx.send(f"Kicked {member.mention}", delete_after=7)
         await log_action(ctx, f"kicked {member} for: {reason}", user_id=member.id, action_type="kick")
-    try:
-        await member.send(f"🚫 You have been kicked from **{ctx.guild.name}** for: {reason}")
-    except:
-        await log_action(ctx, f"Failed to DM kick message to {member} (ID: {member.id})")
+
+        try:
+            await member.send(f"🚫 You have been kicked from **{ctx.guild.name}** for: {reason}")
+        except:
+            await log_action(ctx, f"Failed to DM kick message to {member} (ID: {member.id})")
 
     except Exception as e:
-        await ctx.send("❌ Failed to kick the user.")
+        await ctx.send("❌ Failed to kick the user.", delete_after=7)
         print(f"[Kick Error] {e}")
 
 @bot.command()
