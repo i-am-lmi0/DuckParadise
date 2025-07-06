@@ -683,96 +683,37 @@ async def userinfo(ctx, member: discord.Member = None):
     member = member or ctx.author
 
     try:
-        roles = [role.name for role in member.roles if role.name != "@everyone"]
-        roles_string = ", ".join(roles) if roles else "None"
-
-        joined_at = member.joined_at.strftime("%B %d, %Y at %I:%M %p UTC") if member.joined_at else "Unknown"
-        created_at = member.created_at.strftime("%B %d, %Y at %I:%M %p UTC")
-
         guild_id = str(ctx.guild.id)
         user_id = str(member.id)
         warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
 
+        joined_at = member.joined_at.strftime("%B %d, %Y") if member.joined_at else "Unknown"
+        created_at = member.created_at.strftime("%B %d, %Y")
+        join_days = (discord.utils.utcnow() - member.joined_at).days if member.joined_at else "Unknown"
+        create_days = (discord.utils.utcnow() - member.created_at).days if member.created_at else "Unknown"
+
         embed = discord.Embed(
-            title=f"Complete User Info - {member}",
-            description=f"User data for {member.mention}",
+            title="-User Info-",
+            description=f"Info for {member.mention}",
             color=discord.Color.blurple()
         )
 
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
 
-        # basic info
-        embed.add_field(name="Username", value=f"{member.name}#{member.discriminator}", inline=True)
-        embed.add_field(name="Display Name", value=member.display_name, inline=True)
-        embed.add_field(name="User ID", value=member.id, inline=True)
+        embed.add_field(name="🆔 User ID", value=str(member.id), inline=False)
+        embed.add_field(name="👤 Nickname", value=member.nick or "None", inline=False)
+        embed.add_field(name="📅 Join Date", value=f"{joined_at}, {join_days} days ago", inline=False)
+        embed.add_field(name="📅 Creation Date", value=f"{created_at}, {create_days} days ago", inline=False)
+        embed.add_field(name="🏅 Badges", value="None", inline=False)
+        embed.add_field(name="📛 Tag", value=str(member.mention), inline=False)
+        embed.add_field(name="💎 Nitro Boosting", value="Boosting" if member.premium_since else "Member not boosting.", inline=False)
 
-        # dates
-        embed.add_field(name="Account Created", value=created_at, inline=False)
-        embed.add_field(name="Joined Server", value=joined_at, inline=False)
+        roles = [role.mention for role in member.roles if role.name != "@everyone"]
+        roles_string = ", ".join(roles) if roles else "None"
+        embed.add_field(name="🧷 Number of Roles", value=str(len(roles)), inline=False)
+        embed.add_field(name="📌 Roles", value=roles_string, inline=False)
 
-        # roles
-        embed.add_field(name="Roles", value=roles_string, inline=False)
-        embed.add_field(name="Top Role", value=member.top_role.name if member.top_role else "None", inline=True)
-        embed.add_field(name="Hoist Role", value=member.top_role.name if member.top_role and member.top_role.hoist else "None", inline=True)
-
-        # status & activity
-        embed.add_field(name="Status", value=str(member.status).capitalize(), inline=True)
-        embed.add_field(name="Desktop Status", value=str(member.desktop_status).capitalize(), inline=True)
-        embed.add_field(name="Mobile Status", value=str(member.mobile_status).capitalize(), inline=True)
-        embed.add_field(name="Web Status", value=str(member.web_status).capitalize(), inline=True)
-
-        # activity (if any)
-        activity = member.activity
-        if activity:
-            embed.add_field(name="Activity Type", value=str(activity.type).split('.')[-1].capitalize(), inline=True)
-            embed.add_field(name="Activity Name", value=activity.name, inline=True)
-            if getattr(activity, 'details', None):
-                embed.add_field(name="Activity Details", value=activity.details, inline=True)
-            if getattr(activity, 'state', None):
-                embed.add_field(name="Activity State", value=activity.state, inline=True)
-
-        # other
-        embed.add_field(name="Is Bot", value="✅ Yes" if member.bot else "❌ No", inline=True)
-        embed.add_field(name="Is Timed Out?", value="✅ Yes" if getattr(member, "timed_out", False) else "❌ No", inline=True)
-        embed.add_field(name="Pending?", value="✅ Yes" if getattr(member, "pending", False) else "❌ No", inline=True)
-        embed.add_field(name="Boosting Since", value=member.premium_since.strftime("%B %d, %Y at %I:%M %p UTC") if member.premium_since else "Not boosting", inline=False)
-
-        # permissions
-        permissions = [perm[0].replace('_', ' ').title() for perm in member.guild_permissions if perm[1]]
-        permissions_str = ', '.join(permissions) if permissions else "None"
-        embed.add_field(name="Guild Permissions", value=permissions_str, inline=False)
-
-        # warnings
-        embed.add_field(name="Number of Warnings", value=str(warnings), inline=True)
-        
-        # list individual warnings if any
-        user_warnings = warnings_data.get(guild_id, {}).get(user_id, [])
-        for i, w in enumerate(user_warnings[:3], 1):  # show up to 3 warnings
-            try:
-                reason = w.get("reason", "No reason")
-                by = w.get("by", "Unknown")
-                time = w.get("time", "Unknown")
-                timestamp = int(datetime.fromisoformat(time).timestamp()) if time != "Unknown" else "Unknown"
-                time_str = f"<t:{timestamp}:R>" if timestamp != "Unknown" else "Unknown"
-                embed.add_field(
-                    name=f"⚠️ Warning {i}",
-                    value=f"**By:** {by}\n**Reason:** {reason}\n**Time:** {time_str}",
-                    inline=False
-                )
-            except Exception as e:
-                print(f"[Warning parse error] {e}")
-
-
-        # avatar banner
-        banner_url = ""
-        if hasattr(member, "banner") and member.banner:
-            try:
-                banner_url = member.banner.url
-            except Exception:
-                banner_url = ""
-
-        if banner_url:
-            embed.set_image(url=banner_url)
+        embed.add_field(name="⚠️ Warnings", value=str(warnings), inline=False)
 
         await ctx.send(embed=embed)
 
