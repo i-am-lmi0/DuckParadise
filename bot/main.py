@@ -751,6 +751,8 @@ class CommandPages(View):
 
 @bot.command()
 async def cmds(ctx):
+    guild_id = str(ctx.guild.id)
+    staff_role_id = config.get("staff_roles", {}).get(guild_id)
     staff_role = ctx.guild.get_role(staff_role_id) if staff_role_id else None
     is_staff = staff_role in ctx.author.roles if staff_role else False
 
@@ -798,7 +800,7 @@ async def cmds(ctx):
     economy.add_field(name="?rob @user", value="*Rob another user*", inline=False)
     economy.add_field(name="?fish", value="*Go fishing to earn coins*", inline=False)
     economy.add_field(name="?gamble <amount>", value="*Gamble your coins*", inline=False)
-    
+
     if is_staff:
         view = CommandPages([general, staff, economy])
     else:
