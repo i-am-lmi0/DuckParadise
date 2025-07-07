@@ -9,7 +9,9 @@
   "lucky_coin": {
     "price": 1000,
     "description": "Increases gambling win chance temporarily.",
-    "usable": true
+    "usable": true,
+    "effect": "gamble_boost",
+    "duration_minutes": 30
   }
 
 
