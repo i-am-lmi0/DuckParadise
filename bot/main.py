@@ -427,8 +427,24 @@ async def gamble(ctx, amount: int):
     if amount <= 0 or amount > user_data['wallet']:
         return await ctx.send("❌ Invalid amount to gamble.")
 
-    result = random.choice(["win", "lose"])
-    if result == "win":
+    user_key = (ctx.guild.id, ctx.author.id)
+    now = datetime.utcnow()
+    boost_active = False
+
+    if user_key in active_effects:
+        boost_expiry = active_effects[user_key].get("gamble_boost")
+        if boost_expiry and boost_expiry > now:
+            boost_active = True
+        else:
+            # effect expired, remove it
+            active_effects[user_key].pop("gamble_boost", None)
+
+    # increase win chance if boosted
+    win_chance = 0.5  # 50% base
+    if boost_active:
+        win_chance = 0.75  # 75% with boost
+
+    if random.random() < win_chance:
         winnings = amount
         user_data['wallet'] += winnings
         await ctx.send(f"🎉 You won {winnings} coins from gambling!")
@@ -442,22 +458,35 @@ async def gamble(ctx, amount: int):
 async def use(ctx, item: str):
     item = item.lower()
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
+    shop_items = load_shop_items()
 
     if item not in user_data.get("inventory", []):
         return await ctx.send(f"❌ You don't have a {item} in your inventory.")
+    if item not in shop_items:
+        return await ctx.send(f"❌ {item} is not a valid shop item.")
 
-    if item == "laptop":
-        await ctx.send("💻 You used your laptop to work harder! Earned an extra 100 coins!")
-        user_data["wallet"] += 100
-    elif item == "fishing_rod":
-        catch = random.choice(fishes)
-        user_data['wallet'] += catch[1]
-        await ctx.send(f"🎣 You used your fishing rod and caught a {catch[0]} earning {catch[1]} coins!")
+    item_info = shop_items[item]
+    if not item_info.get("usable", False):
+        return await ctx.send(f"⚠️ {item.capitalize()} is not usable.")
+
+    # initialize user's active effects dict if needed
+    user_key = (ctx.guild.id, ctx.author.id)
+    if user_key not in active_effects:
+        active_effects[user_key] = {}
+
+    effect = item_info.get("effect")
+    duration = item_info.get("duration_minutes")
+
+    # handle effect application
+    if effect == "gamble_boost":
+        expire_time = datetime.utcnow() + timedelta(minutes=duration or 30)
+        active_effects[user_key][effect] = expire_time
+        await ctx.send(f"✨ You used {item} and gained a gambling boost for {duration or 30} minutes!")
     else:
-        return await ctx.send(f"⚠️ Using {item} currently has no effect.")
+        await ctx.send(f"⚠️ Using {item} currently has no effect.")
 
+    # remove one item from inventory after use
     user_data["inventory"].remove(item)
-    update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
     update_user_data(ctx.guild.id, ctx.author.id, "inventory", user_data["inventory"])
 
 @bot.command()
