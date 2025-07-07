@@ -8,6 +8,11 @@ from datetime import datetime
 import traceback
 from discord import Embed, ButtonStyle, Interaction
 from discord.ui import View, Button
+import discord
+from discord.ext import commands
+import random
+from datetime import timedelta
+import json
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -20,6 +25,18 @@ REACTION_ROLE_FILE = "reaction_roles.json"
 AFK_FILE = "afk.json"
 STICKY_PATH = "stickynotes.json"
 economy_file = "economy.json"
+
+fishes = [
+    ("🦐 Shrimp", 100),
+    ("🐟 Fish", 200),
+    ("🐠 Tropical Fish", 300),
+    ("🦑 Squid", 400),
+    ("🐡 Pufferfish", 500)
+]
+
+def load_shop_items():
+    with open('shop_items.json', 'r') as f:
+        return json.load(f)
 
 if not os.path.exists(economy_file):
     with open(economy_file, "w") as f:
@@ -303,6 +320,7 @@ async def withdraw(ctx, amount: int):
 
 @bot.command()
 async def shop(ctx):
+    shop_items = load_shop_items()
     embed = Embed(title="🛍️ Item Shop", color=discord.Color.green())
     for item_name, info in shop_items.items():
         embed.add_field(name=f"{item_name.capitalize()} - 🪙 {info['price']}", value=info['description'], inline=False)
@@ -311,6 +329,7 @@ async def shop(ctx):
 @bot.command()
 async def buy(ctx, item: str):
     item = item.lower()
+    shop_items = load_shop_items()
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
     if item not in shop_items:
         return await ctx.send("❌ That item doesn't exist in the shop.")
@@ -325,6 +344,7 @@ async def buy(ctx, item: str):
 
 @bot.command()
 async def inventory(ctx):
+    shop_items = load_shop_items()
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
     inv = user_data["inventory"]
     if not inv:
@@ -396,14 +416,6 @@ async def fish(ctx):
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
     if "fishing_rod" not in user_data["inventory"]:
         return await ctx.send("🎣 You need a fishing rod to fish! Buy one from the shop with `?buy fishing_rod`")
-
-    fishes = [
-        ("🦐 Shrimp", 100),
-        ("🐟 Fish", 200),
-        ("🐠 Tropical Fish", 300),
-        ("🦑 Squid", 400),
-        ("🐡 Pufferfish", 500)
-    ]
     catch = random.choice(fishes)
     user_data['wallet'] += catch[1]
     update_user_data(ctx.guild.id, ctx.author.id, 'wallet', user_data['wallet'])
@@ -425,6 +437,28 @@ async def gamble(ctx, amount: int):
         await ctx.send(f"💸 You lost {amount} coins from gambling.")
 
     update_user_data(ctx.guild.id, ctx.author.id, 'wallet', user_data['wallet'])
+    
+@bot.command()
+async def use(ctx, item: str):
+    item = item.lower()
+    user_data = get_user_data(ctx.guild.id, ctx.author.id)
+
+    if item not in user_data.get("inventory", []):
+        return await ctx.send(f"❌ You don't have a {item} in your inventory.")
+
+    if item == "laptop":
+        await ctx.send("💻 You used your laptop to work harder! Earned an extra 100 coins!")
+        user_data["wallet"] += 100
+    elif item == "fishing_rod":
+        catch = random.choice(fishes)
+        user_data['wallet'] += catch[1]
+        await ctx.send(f"🎣 You used your fishing rod and caught a {catch[0]} earning {catch[1]} coins!")
+    else:
+        return await ctx.send(f"⚠️ Using {item} currently has no effect.")
+
+    user_data["inventory"].remove(item)
+    update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
+    update_user_data(ctx.guild.id, ctx.author.id, "inventory", user_data["inventory"])
 
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
@@ -731,7 +765,11 @@ async def cmds(ctx):
     economy.add_field(name="?inventory", value="*View your items*", inline=False)
     economy.add_field(name="?use <item>", value="*Use an item from your inventory*", inline=False)
     economy.add_field(name="?give @user <amount>", value="*Give money to another user*", inline=False)
-
+    economy.add_field(name="?leaderboard", value="*View the richest users*", inline=False)
+    economy.add_field(name="?rob @user", value="*Rob another user*", inline=False)
+    economy.add_field(name="?fish", value="*Go fishing to earn coins*", inline=False)
+    economy.add_field(name="?gamble <amount>", value="*Gamble your coins*", inline=False)
+    
     if is_staff:
         view = CommandPages([general, staff, economy])
     else:
