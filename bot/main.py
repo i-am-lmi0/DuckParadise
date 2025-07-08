@@ -1221,7 +1221,7 @@ async def userinfo(ctx, member: discord.Member = None):
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\nID: {ctx.guild.id}\nMembers: {ctx.guild.member_count}")
 
-def convert_time(time_str: str) -> Optional[int]:
+def convert_time(time_str: str):
     try:
         units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
         return int(time_str[:-1]) * units[time_str[-1]]
