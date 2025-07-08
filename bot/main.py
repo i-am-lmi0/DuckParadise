@@ -73,6 +73,14 @@ if not os.path.exists(ECONOMY_PATH):
     with open(ECONOMY_PATH, "w") as f:
         json.dump({}, f)
 
+def get_prefix(bot, message):
+    guild_id = str(message.guild.id) if message.guild else None
+    return config.get("prefixes", {}).get(guild_id, "?")
+
+bot = commands.Bot(command_prefix=get_prefix, intents=intents)
+log_channel_id = None
+staff_role_id = Non
+
 def load_sticky_notes():
     if os.path.exists(STICKY_PATH):
         with open(STICKY_PATH, "r") as f:
@@ -82,16 +90,6 @@ def load_sticky_notes():
 def save_sticky_notes(data):
     with open(STICKY_PATH, "w") as f:
         json.dump(data, f, indent=2)
-
-sticky_notes = load_sticky_notes()
-
-def get_prefix(bot, message):
-    guild_id = str(message.guild.id) if message.guild else None
-    return config.get("prefixes", {}).get(guild_id, "?")
-
-bot = commands.Bot(command_prefix=get_prefix, intents=intents)
-log_channel_id = None
-staff_role_id = None
 
 def load_afk():
     if os.path.exists(AFK_FILE):
@@ -103,6 +101,7 @@ def save_afk():
     with open(AFK_FILE, "w") as f:
         json.dump({str(k): v for k, v in afk_data.items()}, f, indent=4)
 
+sticky_notes = load_sticky_notes()
 afk_data = load_afk()
 
 def load_reaction_roles():
@@ -1081,23 +1080,22 @@ async def stickynote(ctx):
     
 @bot.event
 async def on_message(message):
-    await bot.process_commands(message)
-
     if message.author.bot:
         return
 
+    # sticky note repost logic
     channel_id = str(message.channel.id)
     if channel_id in sticky_notes:
-        try:
-            old_msg_id = int(sticky_notes[channel_id]["message_id"])
-            old_msg = await message.channel.fetch_message(old_msg_id)
-            await old_msg.delete()
-        except:
-            pass
+        await message.channel.send(sticky_notes[channel_id])
 
-        new_msg = await message.channel.send(f"📌 **Sticky Note:** {sticky_notes[channel_id]['message']}")
-        sticky_notes[channel_id]["message_id"] = str(new_msg.id)
-        save_sticky_notes(sticky_notes)
+    # afk return logic
+    user_id = message.author.id
+    if user_id in afk_data:
+        del afk_data[user_id]
+        save_afk()
+        await message.channel.send(f"🟢 Welcome back {message.author.mention}, I've removed your AFK status.")
+
+    await bot.process_commands(message)
         
 @bot.command()
 @staff_only()
