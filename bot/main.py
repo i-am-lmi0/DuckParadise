@@ -69,8 +69,8 @@ def update_user_data_all(guild_id, user_id, update_dict):
     data[str(guild_id)][str(user_id)].update(update_dict)
     save_economy(data)
 
-if not os.path.exists(economy_file):
-    with open(economy_file, "w") as f:
+if not os.path.exists(ECONOMY_PATH):
+    with open(ECONOMY_PATH, "w") as f:
         json.dump({}, f)
 
 def load_sticky_notes():
