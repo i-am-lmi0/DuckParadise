@@ -11,6 +11,7 @@ from discord.ui import View, Button
 import random
 from datetime import timedelta
 import json
+import time
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
@@ -25,6 +26,7 @@ STICKY_PATH = os.path.join(os.path.dirname(__file__), "stickynotes.json")
 SHOP_PATH = os.path.join(os.path.dirname(__file__), "shop_items.json")
 ECONOMY_PATH = os.path.join(os.path.dirname(__file__), "economy.json")
 active_effects = {}
+sticky_cooldowns = {}
 
 fishes = [
     ("🦐 Shrimp", 100),
@@ -509,49 +511,6 @@ async def afk(ctx, *, reason="AFK"):
     except:
         pass
     await ctx.send(f"✅ {ctx.author.mention} is now AFK: {reason}")
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    # remove afk if the user is marked as afk and sends a message
-    if message.author.id in afk_data:
-        del afk_data[message.author.id]
-        save_afk()
-        try:
-            if message.author.display_name.startswith("[AFK] "):
-                new_nick = message.author.display_name.replace("[AFK] ", "", 1)
-                await message.author.edit(nick=new_nick)
-        except:
-            pass
-        await message.channel.send(f"🟢 Welcome back {message.author.mention}, I’ve removed your AFK status.")
-
-    # notify if user mentions any afk users
-    notified = set()
-    for user in message.mentions:
-        if user.id in afk_data and user.id not in notified:
-            reason = afk_data[user.id]["reason"]
-            try:
-                since = datetime.fromisoformat(afk_data[user.id]["time"])
-                delta = datetime.utcnow() - since
-                mins, secs = divmod(int(delta.total_seconds()), 60)
-                hrs, mins = divmod(mins, 60)
-                days, hrs = divmod(hrs, 24)
-                duration = (
-                    f"{days}d " if days else "" +
-                    f"{hrs}h " if hrs else "" +
-                    f"{mins}m " if mins else "" +
-                    f"{secs}s"
-                ).strip()
-                await message.channel.send(
-                    f"🔕 {user.display_name} is AFK: {reason} (since {duration} ago)"
-                )
-            except:
-                await message.channel.send(f"🔕 {user.display_name} is AFK: {reason}")
-            notified.add(user.id)
-
-    await bot.process_commands(message)
 
 @bot.command()
 @staff_only()
@@ -1080,25 +1039,6 @@ async def stickynote(ctx):
     await ctx.send("✅ Sticky note set successfully!", delete_after=7)
     await ctx.message.delete(delay=7)
     await reply.delete(delay=7)
-    
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    # sticky note repost logic
-    channel_id = str(message.channel.id)
-    if channel_id in sticky_notes:
-        await message.channel.send(sticky_notes[channel_id])
-
-    # afk return logic
-    user_id = message.author.id
-    if user_id in afk_data:
-        del afk_data[user_id]
-        save_afk()
-        await message.channel.send(f"🟢 Welcome back {message.author.mention}, I've removed your AFK status.")
-
-    await bot.process_commands(message)
         
 @bot.command()
 @staff_only()
@@ -1172,6 +1112,76 @@ async def on_raw_reaction_remove(payload):
     role = discord.utils.get(guild.roles, id=data[1])
     if member and role:
         await member.remove_roles(role)
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if message.author.id in afk_data:
+        del afk_data[message.author.id]
+        save_afk()
+        try:
+            if message.author.display_name.startswith("[AFK] "):
+                new_nick = message.author.display_name.replace("[AFK] ", "", 1)
+                await message.author.edit(nick=new_nick)
+        except:
+            pass
+        await message.channel.send(f"🟢 Welcome back {message.author.mention}, I’ve removed your AFK status.")
+
+    notified = set()
+    for user in message.mentions:
+        if user.id in afk_data and user.id not in notified:
+            reason = afk_data[user.id]["reason"]
+            try:
+                since = datetime.fromisoformat(afk_data[user.id]["time"])
+                delta = datetime.utcnow() - since
+                mins, secs = divmod(int(delta.total_seconds()), 60)
+                hrs, mins = divmod(mins, 60)
+                days, hrs = divmod(hrs, 24)
+                duration = (
+                    (f"{days}d " if days else "") +
+                    (f"{hrs}h " if hrs else "") +
+                    (f"{mins}m " if mins else "") +
+                    (f"{secs}s")
+                ).strip()
+                await message.reply(f"🔕 {user.display_name} is AFK: {reason} (since {duration} ago)")
+            except:
+                await message.reply(f"🔕 {user.display_name} is AFK: {reason}")
+            notified.add(user.id)
+
+
+    guild_id = str(message.guild.id)
+    channel_id = str(message.channel.id)
+
+    if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
+        if message.author == bot.user:
+            return
+
+        now = time.time()
+        cooldown = 5
+        last_time = sticky_cooldowns.get(guild_id, {}).get(channel_id, 0)
+        if now - last_time < cooldown:
+            return
+
+        try:
+            old_msg_id = int(sticky_notes[guild_id][channel_id]["message_id"])
+            old_msg = await message.channel.fetch_message(old_msg_id)
+            await old_msg.delete()
+        except:
+            pass
+
+        content = sticky_notes[guild_id][channel_id]["message"]
+        new_msg = await message.channel.send(f"📌 **Sticky Note:** {content}")
+
+        sticky_notes[guild_id][channel_id]["message_id"] = str(new_msg.id)
+        save_sticky_notes(sticky_notes)
+
+        if guild_id not in sticky_cooldowns:
+            sticky_cooldowns[guild_id] = {}
+        sticky_cooldowns[guild_id][channel_id] = now
+
+    await bot.process_commands(message)
 
 @bot.command()
 @staff_only()
