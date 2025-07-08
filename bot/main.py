@@ -8,8 +8,6 @@ from datetime import datetime
 import traceback
 from discord import Embed, ButtonStyle, Interaction
 from discord.ui import View, Button
-import discord
-from discord.ext import commands
 import random
 from datetime import timedelta
 import json
@@ -35,6 +33,11 @@ fishes = [
     ("🦑 Squid", 400),
     ("🐡 Pufferfish", 500)
 ]
+
+def update_user_data(guild_id, user_id, key, value):
+    data = load_economy()
+    data[str(guild_id)][str(user_id)][key] = value
+    save_economy(data)
 
 def load_shop_items():
     if not os.path.exists(SHOP_PATH):
