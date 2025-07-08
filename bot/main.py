@@ -18,14 +18,14 @@ TOKEN = os.environ["DISCORD_TOKEN"]
 
 intents = discord.Intents.all()
 
-WARNINGS_FILE = "warnings.json"
-ACTIONS_FILE = "actions.json"
-CONFIG_FILE = "config.json"
-REACTION_ROLE_FILE = "reaction_roles.json"
-AFK_FILE = "afk.json"
-STICKY_PATH = "stickynotes.json"
-SHOP_PATH = "shop_items.json"
-ECONOMY_PATH = "economy.json"
+WARNINGS_FILE = os.path.join(os.path.dirname(__file__), "warnings.json")
+ACTIONS_FILE = os.path.join(os.path.dirname(__file__), "actions.json")
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+REACTION_ROLE_FILE = os.path.join(os.path.dirname(__file__), "reaction_roles.json")
+AFK_FILE = os.path.join(os.path.dirname(__file__), "afk.json")
+STICKY_PATH = os.path.join(os.path.dirname(__file__), "stickynotes.json")
+SHOP_PATH = os.path.join(os.path.dirname(__file__), "shop_items.json")
+ECONOMY_PATH = os.path.join(os.path.dirname(__file__), "economy.json")
 active_effects = {}
 
 fishes = [
