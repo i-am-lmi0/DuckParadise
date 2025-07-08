@@ -79,7 +79,7 @@ def get_prefix(bot, message):
 
 bot = commands.Bot(command_prefix=get_prefix, intents=intents)
 log_channel_id = None
-staff_role_id = Non
+staff_role_id = None
 
 def load_sticky_notes():
     if os.path.exists(STICKY_PATH):
