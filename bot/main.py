@@ -50,20 +50,30 @@ def save_economy(data):
     with open(economy_file, "w") as f:
         json.dump(data, f, indent=2)
 
+DEFAULT_USER_DATA = {
+    "wallet": 100,
+    "bank": 0,
+    "inventory": [],
+    "last_daily": None,
+    "last_work": None,
+    "last_beg": None,
+}
+
 def get_user_data(guild_id, user_id):
     data = load_economy()
     guild_id = str(guild_id)
     user_id = str(user_id)
+
     if guild_id not in data:
         data[guild_id] = {}
+
     if user_id not in data[guild_id]:
-        data[guild_id][user_id] = {
-            "wallet": 100,
-            "bank": 0,
-            "inventory": [],
-            "last_daily": None,
-            "last_work": None
-        }
+        data[guild_id][user_id] = DEFAULT_USER_DATA.copy()
+    else:
+        for key, value in DEFAULT_USER_DATA.items():
+            if key not in data[guild_id][user_id]:
+                data[guild_id][user_id][key] = value
+
     save_economy(data)
     return data[guild_id][user_id]
 
@@ -242,9 +252,10 @@ async def balance(ctx, member: discord.Member = None):
     member = member or ctx.author
     user_data = get_user_data(ctx.guild.id, member.id)
     embed = Embed(title=f"{member.display_name}'s Balance", color=discord.Color.gold())
-    embed.add_field(name="Wallet", value=f"🪙 {user_data['wallet']}", inline=True)
-    embed.add_field(name="Bank", value=f"🏦 {user_data['bank']}", inline=True)
+    embed.add_field(name="Wallet", value=f"🪙 {user_data.get('wallet', 0)}", inline=True)
+    embed.add_field(name="Bank", value=f"🏦 {user_data.get('bank', 0)}", inline=True)
     await ctx.send(embed=embed)
+
 
 @bot.command(name="daily", aliases=["collect"])
 async def daily(ctx):
@@ -252,43 +263,59 @@ async def daily(ctx):
     now = datetime.utcnow()
     last_claim = user_data.get("last_daily")
     if last_claim:
-        last_time = datetime.fromisoformat(last_claim)
-        if now - last_time < timedelta(hours=24):
-            remaining = timedelta(hours=24) - (now - last_time)
-            return await ctx.send(f"🕒 You can claim your daily again in {remaining.seconds//3600}h {(remaining.seconds//60)%60}m")
+        try:
+            last_time = datetime.fromisoformat(last_claim)
+            if now - last_time < timedelta(hours=24):
+                remaining = timedelta(hours=24) - (now - last_time)
+                return await ctx.send(f"🕒 You can claim your daily again in {remaining.seconds//3600}h {(remaining.seconds//60)%60}m")
+        except:
+            pass  # fallback to allow claiming if time is corrupted
+
     user_data["wallet"] += 500
     update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
     update_user_data(ctx.guild.id, ctx.author.id, "last_daily", now.isoformat())
     await ctx.send(f"✅ You claimed your daily reward of 500 coins!")
+
 
 @bot.command(name="work", aliases=["earn"])
 async def work(ctx):
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
     now = datetime.utcnow()
     last_work = user_data.get("last_work")
+
     if last_work:
-        last_time = datetime.fromisoformat(last_work)
-        if now - last_time < timedelta(minutes=30):
-            remaining = timedelta(minutes=30) - (now - last_time)
-            return await ctx.send(f"🕒 You can work again in {remaining.seconds//60} minutes")
-    if "laptop" not in user_data["inventory"]:
+        try:
+            last_time = datetime.fromisoformat(last_work)
+            if now - last_time < timedelta(minutes=30):
+                remaining = timedelta(minutes=30) - (now - last_time)
+                return await ctx.send(f"🕒 You can work again in {remaining.seconds//60} minutes")
+        except:
+            pass
+
+    if "laptop" not in user_data.get("inventory", []):
         return await ctx.send("💻 You need a laptop to work! Buy one from the shop with `?buy laptop`")
+
     earnings = 300
     user_data["wallet"] += earnings
     update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
     update_user_data(ctx.guild.id, ctx.author.id, "last_work", now.isoformat())
     await ctx.send(f"💼 You worked and earned {earnings} coins!")
-    
+
+
 @bot.command()
 async def beg(ctx):
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
     now = datetime.utcnow()
     last_beg = user_data.get("last_beg")
+
     if last_beg:
-        last_time = datetime.fromisoformat(last_beg)
-        if now - last_time < timedelta(minutes=15):
-            remaining = timedelta(minutes=15) - (now - last_time)
-            return await ctx.send(f"🕒 You can beg again in {remaining.seconds//60} minutes")
+        try:
+            last_time = datetime.fromisoformat(last_beg)
+            if now - last_time < timedelta(minutes=15):
+                remaining = timedelta(minutes=15) - (now - last_time)
+                return await ctx.send(f"🕒 You can beg again in {remaining.seconds//60} minutes")
+        except:
+            pass
 
     amount = random.randint(50, 200)
     user_data["wallet"] += amount
@@ -296,10 +323,11 @@ async def beg(ctx):
     update_user_data(ctx.guild.id, ctx.author.id, "last_beg", now.isoformat())
     await ctx.send(f"🙇 You begged and received {amount} coins!")
 
+
 @bot.command(name="deposit", aliases=["dep"])
 async def deposit(ctx, amount: int):
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
-    if amount <= 0 or amount > user_data["wallet"]:
+    if amount <= 0 or amount > user_data.get("wallet", 0):
         return await ctx.send("❌ Invalid deposit amount.")
     user_data["wallet"] -= amount
     user_data["bank"] += amount
@@ -307,16 +335,18 @@ async def deposit(ctx, amount: int):
     update_user_data(ctx.guild.id, ctx.author.id, "bank", user_data["bank"])
     await ctx.send(f"🏦 You deposited {amount} coins to your bank.")
 
+
 @bot.command(name="withdraw", aliases=["with"])
 async def withdraw(ctx, amount: int):
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
-    if amount <= 0 or amount > user_data["bank"]:
+    if amount <= 0 or amount > user_data.get("bank", 0):
         return await ctx.send("❌ Invalid withdrawal amount.")
     user_data["bank"] -= amount
     user_data["wallet"] += amount
     update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
     update_user_data(ctx.guild.id, ctx.author.id, "bank", user_data["bank"])
     await ctx.send(f"💰 You withdrew {amount} coins from your bank.")
+
 
 @bot.command()
 async def shop(ctx):
@@ -326,27 +356,29 @@ async def shop(ctx):
         embed.add_field(name=f"{item_name.capitalize()} - 🪙 {info['price']}", value=info['description'], inline=False)
     await ctx.send(embed=embed)
 
+
 @bot.command()
 async def buy(ctx, item: str):
     item = item.lower()
     shop_items = load_shop_items()
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
+
     if item not in shop_items:
         return await ctx.send("❌ That item doesn't exist in the shop.")
     price = shop_items[item]["price"]
-    if user_data["wallet"] < price:
+    if user_data.get("wallet", 0) < price:
         return await ctx.send("❌ You don't have enough coins.")
     user_data["wallet"] -= price
-    user_data["inventory"].append(item)
+    user_data.setdefault("inventory", []).append(item)
     update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
     update_user_data(ctx.guild.id, ctx.author.id, "inventory", user_data["inventory"])
     await ctx.send(f"✅ You bought a {item}!")
 
+
 @bot.command(name="inventory", aliases=["inv"])
 async def inventory(ctx):
-    shop_items = load_shop_items()
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
-    inv = user_data["inventory"]
+    inv = user_data.get("inventory", [])
     if not inv:
         return await ctx.send("🎒 Your inventory is empty.")
     counts = {}
@@ -356,21 +388,26 @@ async def inventory(ctx):
     embed = Embed(title=f"{ctx.author.display_name}'s Inventory", description=desc, color=discord.Color.purple())
     await ctx.send(embed=embed)
 
+
 @bot.command(name="give", aliases=["pay"])
 async def give(ctx, member: discord.Member, amount: int):
     if member == ctx.author:
         return await ctx.send("❌ You can't give coins to yourself.")
     if amount <= 0:
         return await ctx.send("❌ Amount must be greater than 0.")
+
     sender_data = get_user_data(ctx.guild.id, ctx.author.id)
     receiver_data = get_user_data(ctx.guild.id, member.id)
-    if sender_data["wallet"] < amount:
+
+    if sender_data.get("wallet", 0) < amount:
         return await ctx.send("❌ You don't have enough coins to give.")
+
     sender_data["wallet"] -= amount
     receiver_data["wallet"] += amount
     update_user_data(ctx.guild.id, ctx.author.id, "wallet", sender_data["wallet"])
     update_user_data(ctx.guild.id, member.id, "wallet", receiver_data["wallet"])
     await ctx.send(f"🤝 You gave {amount} coins to {member.mention}!")
+
 
 @bot.command(name="leaderboard", aliases=["lb"])
 async def leaderboard(ctx):
@@ -390,41 +427,25 @@ async def leaderboard(ctx):
         embed.add_field(name=f"#{i} {name}", value=f"🪙 {total} coins", inline=False)
     await ctx.send(embed=embed)
 
-@bot.command(name="rob", aliases=["steal"])
-async def rob(ctx, member: discord.Member):
-    if member == ctx.author:
-        return await ctx.send("❌ You can't rob yourself!")
-
-    robber_data = get_user_data(ctx.guild.id, ctx.author.id)
-    victim_data = get_user_data(ctx.guild.id, member.id)
-
-    if robber_data['wallet'] < 500:
-        return await ctx.send("❌ You need at least 500 coins in your wallet to rob someone.")
-    if victim_data['wallet'] < 300:
-        return await ctx.send("❌ That user doesn't have enough coins to be robbed.")
-
-    stolen = random.randint(100, min(robber_data['wallet'], victim_data['wallet'], 500))
-    robber_data['wallet'] += stolen
-    victim_data['wallet'] -= stolen
-    update_user_data(ctx.guild.id, ctx.author.id, 'wallet', robber_data['wallet'])
-    update_user_data(ctx.guild.id, member.id, 'wallet', victim_data['wallet'])
-
-    await ctx.send(f"💰 You robbed {member.display_name} and stole {stolen} coins!")
-
 @bot.command()
 async def fish(ctx):
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
-    if "fishing_rod" not in user_data["inventory"]:
+    inventory = user_data.get("inventory", [])
+    if "fishing_rod" not in inventory:
         return await ctx.send("🎣 You need a fishing rod to fish! Buy one from the shop with `?buy fishing_rod`")
+
     catch = random.choice(fishes)
-    user_data['wallet'] += catch[1]
-    update_user_data(ctx.guild.id, ctx.author.id, 'wallet', user_data['wallet'])
+    user_data["wallet"] += catch[1]
+    update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
     await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
+
 
 @bot.command()
 async def gamble(ctx, amount: int):
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
-    if amount <= 0 or amount > user_data['wallet']:
+    wallet = user_data.get("wallet", 0)
+
+    if amount <= 0 or amount > wallet:
         return await ctx.send("❌ Invalid amount to gamble.")
 
     user_key = (ctx.guild.id, ctx.author.id)
@@ -436,31 +457,53 @@ async def gamble(ctx, amount: int):
         if boost_expiry and boost_expiry > now:
             boost_active = True
         else:
-            # effect expired, remove it
             active_effects[user_key].pop("gamble_boost", None)
 
-    # increase win chance if boosted
-    win_chance = 0.5  # 50% base
-    if boost_active:
-        win_chance = 0.75  # 75% with boost
+    win_chance = 0.75 if boost_active else 0.5
 
     if random.random() < win_chance:
-        winnings = amount
-        user_data['wallet'] += winnings
-        await ctx.send(f"🎉 You won {winnings} coins from gambling!")
+        user_data["wallet"] += amount
+        await ctx.send(f"🎉 You won {amount} coins from gambling!")
     else:
-        user_data['wallet'] -= amount
+        user_data["wallet"] -= amount
         await ctx.send(f"💸 You lost {amount} coins from gambling.")
 
-    update_user_data(ctx.guild.id, ctx.author.id, 'wallet', user_data['wallet'])
-    
+    update_user_data(ctx.guild.id, ctx.author.id, "wallet", user_data["wallet"])
+
+
+@bot.command(name="rob", aliases=["steal"])
+async def rob(ctx, member: discord.Member):
+    if member == ctx.author:
+        return await ctx.send("❌ You can't rob yourself!")
+
+    robber_data = get_user_data(ctx.guild.id, ctx.author.id)
+    victim_data = get_user_data(ctx.guild.id, member.id)
+
+    robber_wallet = robber_data.get("wallet", 0)
+    victim_wallet = victim_data.get("wallet", 0)
+
+    if robber_wallet < 500:
+        return await ctx.send("❌ You need at least 500 coins in your wallet to rob someone.")
+    if victim_wallet < 300:
+        return await ctx.send("❌ That user doesn't have enough coins to be robbed.")
+
+    stolen = random.randint(100, min(robber_wallet, victim_wallet, 500))
+    robber_data["wallet"] += stolen
+    victim_data["wallet"] -= stolen
+
+    update_user_data(ctx.guild.id, ctx.author.id, "wallet", robber_data["wallet"])
+    update_user_data(ctx.guild.id, member.id, "wallet", victim_data["wallet"])
+    await ctx.send(f"💰 You robbed {member.display_name} and stole {stolen} coins!")
+
+
 @bot.command(name="use", aliases=["consume"])
 async def use(ctx, item: str):
     item = item.lower()
     user_data = get_user_data(ctx.guild.id, ctx.author.id)
     shop_items = load_shop_items()
+    inventory = user_data.get("inventory", [])
 
-    if item not in user_data.get("inventory", []):
+    if item not in inventory:
         return await ctx.send(f"❌ You don't have a {item} in your inventory.")
     if item not in shop_items:
         return await ctx.send(f"❌ {item} is not a valid shop item.")
@@ -469,79 +512,55 @@ async def use(ctx, item: str):
     if not item_info.get("usable", False):
         return await ctx.send(f"⚠️ {item.capitalize()} is not usable.")
 
-    # initialize user's active effects dict if needed
     user_key = (ctx.guild.id, ctx.author.id)
     if user_key not in active_effects:
         active_effects[user_key] = {}
 
     effect = item_info.get("effect")
-    duration = item_info.get("duration_minutes")
+    duration = item_info.get("duration_minutes", 30)
 
-    # handle effect application
     if effect == "gamble_boost":
-        expire_time = datetime.utcnow() + timedelta(minutes=duration or 30)
+        expire_time = datetime.utcnow() + timedelta(minutes=duration)
         active_effects[user_key][effect] = expire_time
-        await ctx.send(f"✨ You used {item} and gained a gambling boost for {duration or 30} minutes!")
+        await ctx.send(f"✨ You used {item} and gained a gambling boost for {duration} minutes!")
     else:
         await ctx.send(f"⚠️ Using {item} currently has no effect.")
 
-    # remove one item from inventory after use
-    user_data["inventory"].remove(item)
-    update_user_data(ctx.guild.id, ctx.author.id, "inventory", user_data["inventory"])
-
-@bot.command()
-async def afk(ctx, *, reason="AFK"):
-    user_id = ctx.author.id
-    afk_data[user_id] = {"reason": reason, "time": datetime.utcnow().isoformat()}
-    save_afk()
-    try:
-        await ctx.author.edit(nick=f"[AFK] {ctx.author.display_name}")
-    except:
-        pass
-    await ctx.send(f"✅ {ctx.author.mention} is now AFK: {reason}")
+    # Remove one item after use
+    inventory.remove(item)
+    update_user_data(ctx.guild.id, ctx.author.id, "inventory", inventory)
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # remove afk if the user is marked as afk and sends a message
-    if message.author.id in afk_data:
-        del afk_data[message.author.id]
-        save_afk()
-        try:
-            if message.author.display_name.startswith("[AFK] "):
-                new_nick = message.author.display_name.replace("[AFK] ", "", 1)
-                await message.author.edit(nick=new_nick)
-        except:
-            pass
-        await message.channel.send(f"🟢 Welcome back {message.author.mention}, I’ve removed your AFK status.")
+    user_id = message.author.id
 
-    # notify if user mentions any afk users
-    notified = set()
-    for user in message.mentions:
-        if user.id in afk_data and user.id not in notified:
-            reason = afk_data[user.id]["reason"]
-            try:
-                since = datetime.fromisoformat(afk_data[user.id]["time"])
-                delta = datetime.utcnow() - since
-                mins, secs = divmod(int(delta.total_seconds()), 60)
-                hrs, mins = divmod(mins, 60)
-                days, hrs = divmod(hrs, 24)
-                duration = (
-                    f"{days}d " if days else "" +
-                    f"{hrs}h " if hrs else "" +
-                    f"{mins}m " if mins else "" +
-                    f"{secs}s"
-                ).strip()
-                await message.channel.send(
-                    f"🔕 {user.display_name} is AFK: {reason} (since {duration} ago)"
-                )
-            except:
-                await message.channel.send(f"🔕 {user.display_name} is AFK: {reason}")
-            notified.add(user.id)
+    # if author is afk and sends a message
+    if user_id in afk_data:
+        reason = afk_data.pop(user_id)["reason"]
+        save_afk()
+        await message.channel.send(f"Welcome back <@{user_id}>! I removed your AFK status. You were AFK for: **{reason}**")
+
+    # if author mentioned someone who is afk
+    for mention in message.mentions:
+        if mention.id in afk_data:
+            afk_reason = afk_data[mention.id]["reason"]
+            await message.channel.send(f"⚠️ {mention.display_name} is currently AFK: **{afk_reason}**")
 
     await bot.process_commands(message)
+
+
+@bot.command()
+async def afk(ctx, *, reason="AFK"):
+    user_id = ctx.author.id
+    afk_data[user_id] = {
+        "reason": reason,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    save_afk()
+    await ctx.send(f"✅ <@{user_id}> I’ve set your AFK: **{reason}**")
 
 @bot.command()
 @staff_only()
