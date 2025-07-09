@@ -1022,7 +1022,7 @@ async def setprefix(ctx, new_prefix):
 @bot.command()
 @staff_only()
 async def stickynote(ctx):
-    await ctx.send("📝 Please type the sticky message you'd like to set for this channel.")
+    prompt_msg = await ctx.send("📝 Please type the sticky message you'd like to set for this channel.")
 
     def check(msg):
         return msg.author == ctx.author and msg.channel == ctx.channel
@@ -1030,12 +1030,13 @@ async def stickynote(ctx):
     try:
         reply = await bot.wait_for("message", check=check, timeout=60.0)
     except asyncio.TimeoutError:
-        return await ctx.send("⏰ Timed out. Please run `?stickynote` again.")
+        await prompt_msg.delete()
+        return await ctx.send("⏰ Timed out. Please run `?stickynote` again.", delete_after=7)
 
     guild_id = str(ctx.guild.id)
     channel_id = str(ctx.channel.id)
 
-    # Delete old sticky if exists
+    # delete old sticky if it exists
     if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
         try:
             old_msg = await ctx.channel.fetch_message(int(sticky_notes[guild_id][channel_id]["message_id"]))
@@ -1043,7 +1044,15 @@ async def stickynote(ctx):
         except:
             pass
 
-    # Send raw sticky
+    # delete setup messages
+    try:
+        await prompt_msg.delete()
+        await reply.delete()
+        await ctx.message.delete()
+    except:
+        pass
+
+    # send and save the raw sticky message
     sticky = await ctx.send(reply.content)
 
     if guild_id not in sticky_notes:
