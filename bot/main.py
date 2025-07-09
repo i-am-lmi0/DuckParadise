@@ -27,7 +27,6 @@ REACTION_ROLE_FILE = os.path.join(os.path.dirname(__file__), "reaction_roles.jso
 AFK_FILE = os.path.join(os.path.dirname(__file__), "afk.json")
 STICKY_PATH = os.path.join(os.path.dirname(__file__), "stickynotes.json")
 SHOP_PATH = os.path.join(os.path.dirname(__file__), "shop_items.json")
-ECONOMY_PATH = os.path.join(os.path.dirname(__file__), "economy.json")
 bot_locks = {}
 AUTHORIZED_RESTARTER = "theofficialtruck"
 RESTART_PHRASE = "override"
@@ -91,11 +90,6 @@ async def get_user_data(guild_id, user_id):
 async def update_fields(guild_id, user_id, updates: dict):
     key = f"{guild_id}-{user_id}"
     econ.update_one({"_id": key}, {"$set": updates})
-
-def update_user_data_all(guild_id, user_id, update_dict):
-    data = load_economy()
-    data[str(guild_id)][str(user_id)].update(update_dict)
-    save_economy(data)
 
 if not os.path.exists(ECONOMY_PATH):
     with open(ECONOMY_PATH, "w") as f:
