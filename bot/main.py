@@ -60,6 +60,24 @@ def update_user_data(guild_id, user_id, key, value):
     data[str(guild_id)][str(user_id)][key] = value
     save_economy(data)
 
+async def resolve_member(ctx, arg):
+    try:
+        return await commands.MemberConverter().convert(ctx, arg)
+    except:
+        try:
+            return await ctx.guild.fetch_member(int(arg.strip("<@!>")))
+        except:
+            return None
+            
+def check_target_permission(ctx, member: discord.Member):
+    if member == ctx.author:
+        return "❌ You can't perform this action on yourself."
+    if member == ctx.guild.owner:
+        return "❌ You can't perform this action on the server owner."
+    if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
+        return "❌ You can't perform this action on someone with an equal or higher role."
+    return None
+
 def load_shop_items():
     if not os.path.exists(SHOP_PATH):
         with open(SHOP_PATH, 'w') as f:
@@ -726,7 +744,7 @@ async def cmds(ctx):
     staff.add_field(name="?unban <user_id>", value="*Unban a user*", inline=False)
     staff.add_field(name="?mute @user <time> [reason]", value="*Temporarily mute a user*", inline=False)
     staff.add_field(name="?unmute @user", value="*Unmute a user*", inline=False)
-    staff.add_field(name="?purge <count>", value="*Bulk delete messages*", inline=False)
+    staff.add_field(name="?purge @user <count>", value="*Bulk delete messages*", inline=False)
     staff.add_field(name="?warn @user [reason]", value="*Warn a user*", inline=False)
     staff.add_field(name="?clearwarns @user", value="*Clear all user warnings*", inline=False)
     staff.add_field(name="?slowmode <seconds>", value="*Set channel slowmode*", inline=False)
@@ -918,10 +936,31 @@ async def unmute(ctx, *, user: str):
 
 @bot.command()
 @staff_only()
-async def purge(ctx, amount: int):
-    await ctx.channel.purge(limit=amount + 1)
-    await ctx.send(f"Deleted {amount} messages.", delete_after=7)
-    await log_action(ctx, f"purged {amount} messages in #{ctx.channel.name}")
+async def purge(ctx, user: discord.Member = None, count: int = None):
+    if count is None:
+        # if user was actually count (no @user provided)
+        if isinstance(user, int):
+            count = user
+            user = None
+        else:
+            return await ctx.send("❌ Please specify how many messages to delete.")
+
+    if count <= 0 or count > 100:
+        return await ctx.send("⚠️ You can only purge between 1 and 100 messages.")
+
+    def check(m):
+        return m.author == user if user else True
+
+    try:
+        deleted = await ctx.channel.purge(limit=count + 1, check=check)
+        await ctx.send(f"🧹 Deleted {len(deleted) - 1} messages.", delete_after=5)
+        target = f"from {user.display_name}" if user else "from all users"
+        await log_action(ctx, f"Purged {len(deleted) - 1} messages {target} in #{ctx.channel.name}")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to manage messages here.")
+    except Exception as e:
+        await ctx.send("❗ An error occurred while purging.")
+        print(f"[Purge Error] {e}")
 
 @bot.command()
 @staff_only()
