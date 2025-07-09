@@ -1,2 +1,3 @@
 discord.py
 Flask
+pymongo[srv]
