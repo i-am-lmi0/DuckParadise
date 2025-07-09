@@ -1013,7 +1013,7 @@ async def stickynote(ctx):
     guild_id = str(ctx.guild.id)
     channel_id = str(ctx.channel.id)
 
-    # Delete old sticky if it exists
+    # delete old sticky if it exists
     if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
         try:
             old_msg = await ctx.channel.fetch_message(int(sticky_notes[guild_id][channel_id]["message_id"]))
@@ -1021,8 +1021,15 @@ async def stickynote(ctx):
         except:
             pass
 
-    # Send and save new sticky
-    sticky = await ctx.send(f"📌 **Sticky Note:** {reply.content}")
+    # delete all messages in channel before setting new sticky
+    async for msg in ctx.channel.history(limit=100):
+        try:
+            await msg.delete()
+        except:
+            pass
+
+    # send the raw sticky message
+    sticky = await ctx.send(reply.content)
 
     if guild_id not in sticky_notes:
         sticky_notes[guild_id] = {}
@@ -1033,10 +1040,6 @@ async def stickynote(ctx):
     }
 
     save_sticky_notes(sticky_notes)
-
-    await ctx.send("✅ Sticky note set successfully!", delete_after=7)
-    await ctx.message.delete(delay=7)
-    await reply.delete(delay=7)
         
 @bot.command()
 @staff_only()
@@ -1153,31 +1156,16 @@ async def on_message(message):
     channel_id = str(message.channel.id)
 
     if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
-        if message.author == bot.user:
-            return
-
-        now = time.time()
-        cooldown = 5
-        last_time = sticky_cooldowns.get(guild_id, {}).get(channel_id, 0)
-        if now - last_time < cooldown:
-            return
+        sticky_id = int(sticky_notes[guild_id][channel_id]["message_id"])
+        if message.id == sticky_id:
+            return  # don't delete the sticky itself
 
         try:
-            old_msg_id = int(sticky_notes[guild_id][channel_id]["message_id"])
-            old_msg = await message.channel.fetch_message(old_msg_id)
-            await old_msg.delete()
+            await message.delete()
         except:
             pass
 
-        content = sticky_notes[guild_id][channel_id]["message"]
-        new_msg = await message.channel.send(f"📌 **Sticky Note:** {content}")
-
-        sticky_notes[guild_id][channel_id]["message_id"] = str(new_msg.id)
-        save_sticky_notes(sticky_notes)
-
-        if guild_id not in sticky_cooldowns:
-            sticky_cooldowns[guild_id] = {}
-        sticky_cooldowns[guild_id][channel_id] = now
+        return  # don't process commands in sticky channels
 
     await bot.process_commands(message)
 
