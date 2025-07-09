@@ -25,6 +25,9 @@ AFK_FILE = os.path.join(os.path.dirname(__file__), "afk.json")
 STICKY_PATH = os.path.join(os.path.dirname(__file__), "stickynotes.json")
 SHOP_PATH = os.path.join(os.path.dirname(__file__), "shop_items.json")
 ECONOMY_PATH = os.path.join(os.path.dirname(__file__), "economy.json")
+bot_locks = {}
+AUTHORIZED_RESTARTER = "theofficialtruck"
+RESTART_PHRASE = "override"
 active_effects = {}
 sticky_cooldowns = {}
 
@@ -240,6 +243,21 @@ async def resolve_member(ctx, arg):
         except:
             return None
 
+@bot.command()
+@staff_only()
+async def stop(ctx):
+    guild_id = str(ctx.guild.id)
+    bot_locks[guild_id] = True
+
+    await update_bot_nickname(ctx.guild, True)
+
+    log_channel_id = config.get("log_channels", {}).get(guild_id)
+    if log_channel_id:
+        log_channel = bot.get_channel(log_channel_id)
+        if log_channel:
+            await log_channel.send(f"🛑 Bot has been locked by **{ctx.author}**.")
+
+    await ctx.send("🔒 Bot is now locked and will no longer respond until unlocked.")
 @bot.command(name="balance", aliases=["bal"])
 async def balance(ctx, member: discord.Member = None):
     member = member or ctx.author
@@ -637,7 +655,11 @@ async def on_ready():
 
 @bot.event
 async def on_command_error(ctx, error):
-    if isinstance(error, commands.MissingRequiredArgument):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send("❌ You don’t have permission to use this command.")
+    elif bot_locks.get(str(ctx.guild.id)):
+        await ctx.send("🔒 Bot is currently locked. Only `theofficialtruck` can unlock it with `override`.")
+    elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.send(f"⚠️ Missing arguments. Usage: `{ctx.command.name} {ctx.command.signature}`")
     elif isinstance(error, commands.MissingPermissions):
         await ctx.send("❌ You don't have permission to use this command.")
@@ -1013,7 +1035,7 @@ async def stickynote(ctx):
     guild_id = str(ctx.guild.id)
     channel_id = str(ctx.channel.id)
 
-    # delete old sticky if it exists
+    # Delete old sticky if exists
     if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
         try:
             old_msg = await ctx.channel.fetch_message(int(sticky_notes[guild_id][channel_id]["message_id"]))
@@ -1021,14 +1043,7 @@ async def stickynote(ctx):
         except:
             pass
 
-    # delete all messages in channel before setting new sticky
-    async for msg in ctx.channel.history(limit=100):
-        try:
-            await msg.delete()
-        except:
-            pass
-
-    # send the raw sticky message
+    # Send raw sticky
     sticky = await ctx.send(reply.content)
 
     if guild_id not in sticky_notes:
@@ -1064,7 +1079,6 @@ async def unstickynote(ctx):
         await ctx.message.delete(delay=7)
     else:
         await ctx.send("⚠️ No sticky note found for this channel.", delete_after=7)
-
 @bot.command()
 @staff_only()
 async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
@@ -1116,9 +1130,24 @@ async def on_raw_reaction_remove(payload):
 
 @bot.event
 async def on_message(message):
-    if message.author.bot:
+    if message.author.bot or not message.guild:
         return
 
+    guild_id = str(message.guild.id)
+    channel_id = str(message.channel.id)
+
+    # ----- PER-GUILD LOCK HANDLING -----
+    if bot_locks.get(guild_id):
+        if str(message.author) == AUTHORIZED_RESTARTER and message.content.strip() == RESTART_PHRASE:
+            bot_locks[guild_id] = False
+            await update_bot_nickname(message.guild, False)
+            await message.channel.send("🚀 Booting up...")
+            return
+        else:
+            await message.channel.send("🔒 Bot is locked. Only `theofficialtruck` can unlock it.")
+            return
+
+    # ----- AFK REMOVAL -----
     if message.author.id in afk_data:
         del afk_data[message.author.id]
         save_afk()
@@ -1130,6 +1159,7 @@ async def on_message(message):
             pass
         await message.channel.send(f"🟢 Welcome back {message.author.mention}, I’ve removed your AFK status.")
 
+    # ----- AFK NOTIFICATIONS -----
     notified = set()
     for user in message.mentions:
         if user.id in afk_data and user.id not in notified:
@@ -1151,24 +1181,24 @@ async def on_message(message):
                 await message.reply(f"🔕 {user.display_name} is AFK: {reason}")
             notified.add(user.id)
 
-
-    guild_id = str(message.guild.id)
-    channel_id = str(message.channel.id)
-
+    # ----- STICKY NOTE HANDLING -----
     if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
-        sticky_id = int(sticky_notes[guild_id][channel_id]["message_id"])
-        if message.id == sticky_id:
-            return  # don't delete the sticky itself
+        if message.author != bot.user:
+            try:
+                old_id = int(sticky_notes[guild_id][channel_id]["message_id"])
+                old_msg = await message.channel.fetch_message(old_id)
+                await old_msg.delete()
+            except:
+                pass
 
-        try:
-            await message.delete()
-        except:
-            pass
+            content = sticky_notes[guild_id][channel_id]["message"]
+            new_msg = await message.channel.send(content)
+            sticky_notes[guild_id][channel_id]["message_id"] = str(new_msg.id)
+            save_sticky_notes(sticky_notes)
 
-        return  # don't process commands in sticky channels
-
+    # ----- COMMAND PROCESSING -----
     await bot.process_commands(message)
-
+    
 @bot.command()
 @staff_only()
 async def userinfo(ctx, member: discord.Member = None):
@@ -1212,6 +1242,20 @@ async def userinfo(ctx, member: discord.Member = None):
     except Exception as e:
         await ctx.send("❗ An error occurred while fetching user info.")
         print(f"[UserInfo Error] {e}")
+
+async def update_bot_nickname(guild, locked):
+    try:
+        me = guild.me
+        if locked:
+            if not me.nick or "[🔒 Locked]" not in me.nick:
+                new_nick = f"[🔒 Locked] {me.nick or me.name}"
+                await me.edit(nick=new_nick)
+        else:
+            if me.nick and "[🔒 Locked]" in me.nick:
+                await me.edit(nick=me.nick.replace("[🔒 Locked] ", ""))
+    except Exception as e:
+        print(f"[Nickname update failed in {guild.name}] {e}")
+
 
 @bot.command()
 async def serverinfo(ctx):
