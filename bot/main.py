@@ -36,6 +36,12 @@ econ = db["economy"]
 active_effects = {}
 sticky_cooldowns = {}
 
+try:
+    mongo.admin.command('ping')
+    print("✅ Connected to MongoDB!")
+except Exception as e:
+    print("❌ Failed to connect to MongoDB:", e)
+
 fishes = [
     ("🦐 Shrimp", 100),
     ("🐟 Fish", 200),
@@ -506,13 +512,17 @@ async def fish(ctx):
 
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
-    user_id = ctx.author.id
-    afk_data[user_id] = {"reason": reason, "time": datetime.utcnow().isoformat()}
-    save_afk()
+    gid = str(ctx.guild.id)
+    uid = str(ctx.author.id)
+    
+    # save AFK in mongodb per guild
+    set_afk_db(gid, uid, reason, datetime.utcnow().isoformat())
+
     try:
         await ctx.author.edit(nick=f"[AFK] {ctx.author.display_name}")
     except:
         pass
+
     await ctx.send(f"✅ {ctx.author.mention} is now AFK: {reason}")
 
 @bot.command()
@@ -1273,6 +1283,89 @@ async def update_bot_nickname(guild, locked):
     except Exception as e:
         print(f"[Nickname update failed in {guild.name}] {e}")
 
+@bot.command()
+@commands.has_permissions(manage_roles=True)
+async def vanityroles(ctx, role: discord.Role, log_channel: discord.TextChannel, *, status_keyword: str):
+    guild_id = ctx.guild.id
+
+    # save config in mongodb
+    vanity_collection.update_one(
+        {"guild_id": guild_id},
+        {
+            "$set": {
+                "role_id": role.id,
+                "log_channel_id": log_channel.id,
+                "status_keyword": status_keyword,
+                "users": []
+            }
+        },
+        upsert=True
+    )
+
+    await ctx.send(f"✅ Vanity role system set! Users with `{status_keyword}` in their status will get {role.mention}.")
+
+# monitor presence updates
+@bot.event
+async def on_presence_update(before, after):
+    if not after.guild or after.bot:
+        return
+
+    guild_id = after.guild.id
+    data = vanity_collection.find_one({"guild_id": guild_id})
+    if not data:
+        return
+
+    keyword = data["status_keyword"].lower()
+    role = after.guild.get_role(data["role_id"])
+    log_channel = after.guild.get_channel(data["log_channel_id"])
+
+    current_status = str(after.activity.name if after.activity else "").lower()
+
+    # if the status contains the keyword
+    if keyword in current_status:
+        if role not in after.roles:
+            try:
+                await after.add_roles(role, reason="Vanity status match")
+                embed = discord.Embed(title="🎉 Vanity Role Granted!",
+                                      description=f"{after.mention} now has the {role.mention} role!",
+                                      color=discord.Color.green())
+                await log_channel.send(embed=embed)
+
+                # save user in MongoDB
+                vanity_collection.update_one(
+                    {"guild_id": guild_id},
+                    {"$addToSet": {"users": after.id}}
+                )
+            except discord.Forbidden:
+                print("Bot lacks permissions to add the role.")
+    else:
+        # remove role if user no longer matches
+        if role in after.roles:
+            await after.remove_roles(role, reason="Status no longer matches vanity keyword")
+            vanity_collection.update_one(
+                {"guild_id": guild_id},
+                {"$pull": {"users": after.id}}
+            )
+
+@bot.command()
+@commands.has_permissions(manage_roles=True)
+async def promoters(ctx):
+    guild_id = ctx.guild.id
+    data = vanity_collection.find_one({"guild_id": guild_id})
+    if not data or not data.get("users"):
+        await ctx.send("❌ No promoters found.")
+        return
+
+    user_list = []
+    for user_id in data["users"]:
+        member = ctx.guild.get_member(user_id)
+        if member:
+            user_list.append(member.mention)
+
+    embed = discord.Embed(title="📢 Current Promoters",
+                          description="\n".join(user_list) or "None found.",
+                          color=discord.Color.blue())
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def serverinfo(ctx):
