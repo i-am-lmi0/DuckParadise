@@ -769,6 +769,8 @@ async def cmds(ctx):
     staff.add_field(name="?testboost [@user]", value="*Test boost message*", inline=False)
     staff.add_field(name="?stickynote", value="*Set a sticky message in a channel*", inline=False)
     staff.add_field(name="?unstickynote", value="*Remove sticky message*", inline=False)
+    staff.add_field(name="?vanityroles @role [logchannel] [status message]", value="*Set up vanity roles*", inline=False)
+    staff.add_field(name="?promoters", value="*Check who's promoting*", inline=False)
 
     economy = Embed(title="💰 Economy Commands", color=discord.Color.blurple())
     economy.add_field(name="?bal", value="*Check your balance*", inline=False)
