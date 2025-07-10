@@ -27,6 +27,7 @@ REACTION_ROLE_FILE = os.path.join(os.path.dirname(__file__), "reaction_roles.jso
 AFK_FILE = os.path.join(os.path.dirname(__file__), "afk.json")
 STICKY_PATH = os.path.join(os.path.dirname(__file__), "stickynotes.json")
 SHOP_PATH = os.path.join(os.path.dirname(__file__), "shop_items.json")
+ECONOMY_PATH = os.path.join(os.path.dirname(__file__), "economy.json")
 bot_locks = {}
 AUTHORIZED_RESTARTER = "theofficialtruck"
 RESTART_PHRASE = "override"
@@ -771,6 +772,7 @@ async def cmds(ctx):
     staff.add_field(name="?unstickynote", value="*Remove sticky message*", inline=False)
     staff.add_field(name="?vanityroles @role [logchannel] [status message]", value="*Set up vanity roles*", inline=False)
     staff.add_field(name="?promoters", value="*Check who's promoting*", inline=False)
+    staff.add_field(name="?resetpromoters", value="*Reset all promoters*", inline=False)
 
     economy = Embed(title="💰 Economy Commands", color=discord.Color.blurple())
     economy.add_field(name="?bal", value="*Check your balance*", inline=False)
@@ -1367,6 +1369,56 @@ async def promoters(ctx):
     embed = discord.Embed(title="📢 Current Promoters",
                           description="\n".join(user_list) or "None found.",
                           color=discord.Color.blue())
+    await ctx.send(embed=embed)
+    
+@bot.command()
+@commands.has_permissions(manage_roles=True)
+async def resetpromoters(ctx):
+    guild_id = ctx.guild.id
+    data = vanity_collection.find_one({"guild_id": guild_id})
+    if not data:
+        await ctx.send("❌ No vanity role system configured for this server.")
+        return
+
+    role = ctx.guild.get_role(data["role_id"])
+    if not role:
+        await ctx.send("❌ The configured role no longer exists.")
+        return
+
+    await ctx.send("⚠️ Please confirm by typing: `I confirm I want to reset all the promoters.`")
+
+    def check(msg):
+        return msg.author == ctx.author and msg.channel == ctx.channel
+
+    try:
+        reply = await bot.wait_for("message", check=check, timeout=30)
+    except:
+        await ctx.send("❌ Timeout. Reset cancelled.")
+        return
+
+    if reply.content.strip() != "I confirm I want to reset all the promoters.":
+        await ctx.send("❌ Confirmation failed. Reset cancelled.")
+        return
+
+    # remove the role from all users
+    removed = 0
+    for user_id in data.get("users", []):
+        member = ctx.guild.get_member(user_id)
+        if member and role in member.roles:
+            try:
+                await member.remove_roles(role, reason="Reset promoters list")
+                removed += 1
+            except discord.Forbidden:
+                continue
+
+    # clear the users list in MongoDB
+    vanity_collection.update_one({"guild_id": guild_id}, {"$set": {"users": []}})
+
+    embed = discord.Embed(
+        title="🔁 Promoters Reset",
+        description=f"{removed} users were removed from the {role.mention} role and the list has been cleared.",
+        color=discord.Color.red()
+    )
     await ctx.send(embed=embed)
 
 @bot.command()
