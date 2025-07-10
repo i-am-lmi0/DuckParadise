@@ -1,48 +1,25 @@
+import os, asyncio, random, traceback
+from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
-import asyncio
-import os
-import json
-from keep_alive import keep_alive
-from datetime import datetime
-import traceback
-from discord import Embed, ButtonStyle, Interaction
+from pymongo import MongoClient
 from discord.ui import View, Button
-import random
-from datetime import timedelta
-import json
-import time
-from pymongo import MongoClient
-import os
-from pymongo import MongoClient
+from discord import ButtonStyle, Interaction
+from discord.ext.commands import Bot, when_mentioned_or
+from discord import app_commands
 
+# 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
-
-intents = discord.Intents.all()
-
-WARNINGS_FILE = os.path.join(os.path.dirname(__file__), "warnings.json")
-ACTIONS_FILE = os.path.join(os.path.dirname(__file__), "actions.json")
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
-REACTION_ROLE_FILE = os.path.join(os.path.dirname(__file__), "reaction_roles.json")
-AFK_FILE = os.path.join(os.path.dirname(__file__), "afk.json")
-STICKY_PATH = os.path.join(os.path.dirname(__file__), "stickynotes.json")
-SHOP_PATH = os.path.join(os.path.dirname(__file__), "shop_items.json")
-ECONOMY_PATH = os.path.join(os.path.dirname(__file__), "economy.json")
-bot_locks = {}
-AUTHORIZED_RESTARTER = "theofficialtruck"
-RESTART_PHRASE = "override"
 mongo = MongoClient(os.getenv("MONGO_URI"))
 db = mongo["discord_bot"]
-vanity_collection = db["vanityroles"]
-econ = db["economy"]
-active_effects = {}
-sticky_cooldowns = {}
-
-try:
-    mongo.admin.command('ping')
-    print("✅ Connected to MongoDB!")
-except Exception as e:
-    print("❌ Failed to connect to MongoDB:", e)
+settings_col = db["guild_settings"]
+logs_col = db["logs"]
+economy_col = db["economy"]
+mod_col = db["moderation"]
+afk_col = db["afk"]
+vanity_col = db["vanityroles"]
+sticky_col = db["stickynotes"]
+reaction_col = db["reactionroles"]
 
 fishes = [
     ("🦐 Shrimp", 100),
@@ -52,22 +29,46 @@ fishes = [
     ("🐡 Pufferfish", 500)
 ]
 
-async def get_balance(user_id):
-    doc = economy_col.find_one({"user_id": user_id})
-    return doc["balance"] if doc else 0
+intents = discord.Intents.all()
 
-async def update_balance(user_id, amount):
-    economy_col.update_one(
-        {"user_id": user_id},
-        {"$inc": {"balance": amount}},
-        upsert=True
-    )
+bot = commands.Bot(
+    command_prefix=lambda bot, msg: settings_col.find_one({"guild": str(msg.guild.id)})["prefix"] if msg.guild and settings_col.find_one({"guild": str(msg.guild.id)}) else "?",
+    intents=intents,
+    strip_after_prefix=True
+)
 
-def update_user_data(guild_id, user_id, key, value):
-    data = load_economy()
-    data[str(guild_id)][str(user_id)][key] = value
-    save_economy(data)
+bot_locks = {}
 
+@bot.check
+async def global_lock_check(ctx):
+    if bot_locks.get(str(ctx.guild.id)):
+        await ctx.send("🔒 bot is locked — only `override` by theofficialtruck works")
+        return False
+    return True
+
+# 2. UTIL FUNCTIONS ===========================================
+def staff_only():
+    def predicate(ctx):
+        doc = settings_col.find_one({"guild": str(ctx.guild.id)})
+        role_id = doc.get("staff_role") if doc else None
+        if not role_id:
+            return False
+        role = discord.utils.get(ctx.guild.roles, id=role_id)
+        return role in ctx.author.roles if role else False
+    return commands.check(predicate)
+
+async def get_user(guild_id, user_id):
+    key = f"{guild_id}-{user_id}"
+    u = economy_col.find_one({"_id": key})
+    if not u:
+        economy_col.insert_one({"_id": key, "guild": str(guild_id), "user": str(user_id), "wallet": 0, "bank": 0, "inventory": []})
+        return economy_col.find_one({"_id": key})
+    return u
+
+def convert_time(s): 
+    try: return int(s[:-1]) * {"s":1,"m":60,"h":3600,"d":86400}[s[-1]]
+    except: return None
+        
 async def resolve_member(ctx, arg):
     try:
         return await commands.MemberConverter().convert(ctx, arg)
@@ -85,1392 +86,691 @@ def check_target_permission(ctx, member: discord.Member):
     if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
         return "❌ You can't perform this action on someone with an equal or higher role."
     return None
-
-def load_shop_items():
-    if not os.path.exists(SHOP_PATH):
-        with open(SHOP_PATH, 'w') as f:
-            json.dump({}, f)
-    with open(SHOP_PATH, 'r') as f:
-        return json.load(f)
-
-def load_economy():
-    if not os.path.exists(ECONOMY_PATH):
-        with open(ECONOMY_PATH, 'w') as f:
-            json.dump({}, f)
-    with open(ECONOMY_PATH, 'r') as f:
-        return json.load(f)
-
-def save_economy(data):
-    with open(ECONOMY_PATH, 'w') as f:
-        json.dump(data, f, indent=2)
-
-async def get_user_data(guild_id, user_id):
-    key = f"{guild_id}-{user_id}"
-    doc = econ.find_one({"_id": key})
-    if not doc:
-        doc = {"_id": key, "guild": guild_id, "user": user_id, "wallet": 0, "bank": 0,
-               "inventory": [], "last_daily": None, "last_work": None, "last_beg": None}
-        econ.insert_one(doc)
-    return doc
-
-async def update_fields(guild_id, user_id, updates: dict):
-    key = f"{guild_id}-{user_id}"
-    econ.update_one({"_id": key}, {"$set": updates})
-
-if not os.path.exists(ECONOMY_PATH):
-    with open(ECONOMY_PATH, "w") as f:
-        json.dump({}, f)
-
-def get_prefix(bot, message):
-    guild_id = str(message.guild.id) if message.guild else None
-    return config.get("prefixes", {}).get(guild_id, "?")
-
-bot = commands.Bot(command_prefix=get_prefix, intents=intents)
-log_channel_id = None
-staff_role_id = None
-
-def load_sticky_notes():
-    if os.path.exists(STICKY_PATH):
-        with open(STICKY_PATH, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_sticky_notes(data):
-    with open(STICKY_PATH, "w") as f:
-        json.dump(data, f, indent=2)
-
-def load_afk():
-    if os.path.exists(AFK_FILE):
-        with open(AFK_FILE, "r") as f:
-            return {int(k): v for k, v in json.load(f).items()}
-    return {}
-
-def save_afk():
-    with open(AFK_FILE, "w") as f:
-        json.dump({str(k): v for k, v in afk_data.items()}, f, indent=4)
-
-sticky_notes = load_sticky_notes()
-afk_data = load_afk()
-
-def load_reaction_roles():
-    try:
-        if os.path.exists(REACTION_ROLE_FILE):
-            with open(REACTION_ROLE_FILE, "r") as f:
-                return {int(k): (v[0], v[1]) for k, v in json.load(f).items()}
-    except Exception as e:
-        print(f"Failed to load reaction roles: {e}")
-    return {}
-
-def save_reaction_roles():
-    try:
-        with open(REACTION_ROLE_FILE, "w") as f:
-            json.dump({str(k): v for k, v in reaction_roles.items()}, f, indent=4)
-    except Exception as e:
-        print(f"Failed to save reaction roles: {e}")
-
-reaction_roles = load_reaction_roles()
-
-def load_config():
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"Failed to load config: {e}")
-    return {}
-
-def save_config(data):
-    try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"Failed to save config: {e}")
-
-# initialize config
-config = load_config()
-config.setdefault("staff_roles", {})
-config.setdefault("log_channels", {})
-config.setdefault("welcome_channels", {})
-config.setdefault("boost_channels", {})
-
-staff_role_id = config.get("staff_role_id")
-log_channel_id = config.get("log_channel_id")
-
-def load_warnings():
-    try:
-        if os.path.exists(WARNINGS_FILE):
-            with open(WARNINGS_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"Failed to load warnings: {e}")
-    return {}
-
-def save_warnings(warnings):
-    try:
-        with open(WARNINGS_FILE, "w") as f:
-            json.dump(warnings, f, indent=4)
-    except Exception as e:
-        print(f"Failed to save warnings: {e}")
-
-def load_actions():
-    try:
-        if os.path.exists(ACTIONS_FILE):
-            with open(ACTIONS_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"Failed to load actions: {e}")
-    return {}
-
-def save_actions(data):
-    try:
-        with open(ACTIONS_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"Failed to save actions: {e}")
-
-warnings_data = load_warnings()
-actions_data = load_actions()
-
-from discord.ext import commands
-import discord
-
-def staff_only():
-    def predicate(ctx):
-        guild_id = str(ctx.guild.id)
-        role_id = config.get("staff_roles", {}).get(guild_id)
-        if not role_id:
-            return False
-        role = discord.utils.get(ctx.guild.roles, id=role_id)
-        if role and role in ctx.author.roles:
-            return True
-        return False
-    return commands.check(predicate)
-
+    
+async def get_prefix(bot, message):
+    if not message.guild:
+        return "?"
+    doc = settings_col.find_one({"guild": str(message.guild.id)})
+    return doc.get("prefix", "?") if doc else "?"
+    
 async def log_action(ctx, message, user_id=None, action_type=None):
     try:
         guild_id = str(ctx.guild.id)
-        log_channel_id = config.get("log_channels", {}).get(guild_id)
+        log_channel_id = None
 
+        settings = settings_col.find_one({"guild": guild_id})
+        if settings:
+            log_channel_id = settings.get("log_channel")
+
+        # send log message to the discord channel
         if log_channel_id:
-            channel = bot.get_channel(log_channel_id)
-            if channel:
+            log_channel = bot.get_channel(log_channel_id)
+            if log_channel:
                 timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
-                user_info = f"[User: {ctx.author} | ID: {ctx.author.id}]"
-                await channel.send(f"[LOG - {timestamp}] {user_info} {message}")
+                embed = discord.Embed(
+                    title="📋 Moderation Log",
+                    description=message,
+                    color=discord.Color.dark_blue(),
+                    timestamp=datetime.utcnow()
+                )
+                embed.set_footer(text=f"By {ctx.author} • {ctx.author.id}")
+                await log_channel.send(embed=embed)
 
+        # save to mongo log database
         if user_id and action_type:
-            uid = str(user_id)
-            if guild_id not in actions_data:
-                actions_data[guild_id] = {}
-            if uid not in actions_data[guild_id]:
-                actions_data[guild_id][uid] = []
-            actions_data[guild_id][uid].append({
-                "type": action_type,
-                "by": str(ctx.author),
-                "time": datetime.utcnow().isoformat(),
-                "detail": message
-            })
-            save_actions(actions_data)
-    except Exception as e:
-        print(f"Error logging action: {e}")
+            log_doc = {
+                "guild": guild_id,
+                "user_id": str(user_id),
+                "action": action_type,
+                "by": {
+                    "name": str(ctx.author),
+                    "id": str(ctx.author.id)
+                },
+                "message": message,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            logs_col.insert_one(log_doc)
 
-async def resolve_member(ctx, arg):
-    try:
-        return await commands.MemberConverter().convert(ctx, arg)
-    except Exception:
-        try:
-            return await ctx.guild.fetch_member(int(arg))
-        except:
-            return None
+    except Exception as e:
+        print(f"[log_action ERROR] {e}")
+
+class CommandPages(View):
+    def __init__(self, embeds):
+        super().__init__(timeout=None)
+        self.embeds = embeds
+        self.index = 0
+
+        self.prev = Button(label="⏮️ Prev", style=ButtonStyle.secondary)
+        self.next = Button(label="⏭️ Next", style=ButtonStyle.secondary)
+
+        self.prev.callback = self.show_prev
+        self.next.callback = self.show_next
+
+        self.add_item(self.prev)
+        self.add_item(self.next)
+
+    async def show_prev(self, interaction: Interaction):
+        self.index = (self.index - 1) % len(self.embeds)
+        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+
+    async def show_next(self, interaction: Interaction):
+        self.index = (self.index + 1) % len(self.embeds)
+        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+        
+# 3. COMMANDS =================================================
+@bot.command()
+@commands.guild_only()
+async def staffset(ctx, role: discord.Role):
+    settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"staff_role": role.id}}, upsert=True)
+    await ctx.send(f"✅ Staff role set to {role.mention}.")
+    await log_action(ctx, f"Staff role set to {role}", action_type="staffset")
 
 @bot.command()
-@staff_only()
-async def stop(ctx):
-    guild_id = str(ctx.guild.id)
-    bot_locks[guild_id] = True
+@commands.guild_only()
+async def staffget(ctx):
+    doc = settings_col.find_one({"guild": str(ctx.guild.id)})
+    role = ctx.guild.get_role(doc.get("staff_role")) if doc else None
+    if role:
+        await ctx.send(f"ℹ️ Staff role is {role.mention}.")
+    else:
+        await ctx.send("⚠️ No staff role is currently set.")
 
-    await update_bot_nickname(ctx.guild, True)
+@bot.command()
+@commands.has_permissions(manage_roles=True)
+async def vanityroles(ctx, role: discord.Role, log_channel: discord.TextChannel, *, keyword: str):
+    guild = str(ctx.guild.id)
+    vanity_col.update_one({"guild": guild}, {"$set": {"role": role.id, "log": log_channel.id, "keyword": keyword, "users": []}}, upsert=True)
+    await ctx.send(f"✅ set vanity role for '{keyword}' → {role.mention}")
 
-    log_channel_id = config.get("log_channels", {}).get(guild_id)
-    if log_channel_id:
-        log_channel = bot.get_channel(log_channel_id)
-        if log_channel:
-            await log_channel.send(f"🛑 Bot has been locked by **{ctx.author}**.")
+@bot.command()
+@commands.has_permissions(manage_roles=True)
+async def promoters(ctx):
+    data = vanity_col.find_one({"guild": str(ctx.guild.id)})
+    users = data.get("users", []) if data else []
+    mentions = [ctx.guild.get_member(uid).mention for uid in users if ctx.guild.get_member(uid)]
+    await ctx.send(embed=discord.Embed(title="📢 current promoters", description="\n".join(mentions) or "none", color=discord.Color.blue()))
 
-    await ctx.send("🔒 Bot is now locked and will no longer respond until unlocked.")
+@bot.command()
+@commands.has_permissions(manage_roles=True)
+async def resetpromoters(ctx):
+    guild = str(ctx.guild.id)
+    data = vanity_col.find_one({"guild": guild})
+    if not data:
+        return await ctx.send("❌ no vanity config set")
+    await ctx.send("⚠️ confirm by typing exactly:\n`I confirm I want to reset all the promoters.`")
+    try:
+        msg = await bot.wait_for("message", check=lambda m: m.author==ctx.author and m.channel==ctx.channel, timeout=30)
+    except asyncio.TimeoutError:
+        return await ctx.send("❌ timeout — cancelled")
+    if msg.content.strip() != "I confirm I want to reset all the promoters.":
+        return await ctx.send("❌ confirmation failed — cancelled")
+    r = ctx.guild.get_role(data["role"])
+    removed = 0
+    for uid in data["users"]:
+        m = ctx.guild.get_member(uid)
+        if m and r in m.roles:
+            await m.remove_roles(r, reason="reset promoters")
+            removed += 1
+    vanity_col.update_one({"guild": guild}, {"$set": {"users": []}})
+    await ctx.send(embed=discord.Embed(title="🔁 promoters reset", description=f"{removed} removed, list cleared", color=discord.Color.red()))
 
-@bot.command(name="balance", aliases=["bal"])
+@bot.event
+async def on_presence_update(before, after):
+    if not after.guild or after.bot:
+        return
+    data = vanity_col.find_one({"guild": str(after.guild.id)})
+    if not data: return
+    kw = data["keyword"].lower()
+    status = str(after.activity.name or "").lower()
+    role = after.guild.get_role(data["role"])
+    log = after.guild.get_channel(data["log"])
+    has = role in after.roles
+    if kw in status and not has:
+        await after.add_roles(role, reason="vanity match")
+        vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
+        await log.send(embed=discord.Embed(title="🎉 granted", description=f"{after.mention} got {role.mention}", color=discord.Color.green()))
+    elif kw not in status and has:
+        await after.remove_roles(role, reason="vanity lost")
+        vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
+
+@bot.command(aliases=["bal"])
 async def balance(ctx, member: discord.Member = None):
     member = member or ctx.author
-    data = await get_user_data(ctx.guild.id, member.id)
-    embed = Embed(title=f"{member.display_name}'s Balance", color=discord.Color.gold())
+    data = await get_user(ctx.guild.id, member.id)
+    embed = discord.Embed(title=f"{member.display_name}'s Balance", color=discord.Color.gold())
     embed.add_field(name="Wallet", value=f"🪙 {data['wallet']}", inline=True)
-    embed.add_field(name="Bank",   value=f"🏦 {data['bank']}", inline=True)
+    embed.add_field(name="Bank", value=f"🏦 {data['bank']}", inline=True)
     await ctx.send(embed=embed)
-
-@bot.command(name="daily", aliases=["collect"])
+    
+@bot.command()
 async def daily(ctx):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
+    data = await get_user(ctx.guild.id, ctx.author.id)
     now = datetime.utcnow()
     last = data.get("last_daily")
+
     if last and now - datetime.fromisoformat(last) < timedelta(hours=24):
         rem = timedelta(hours=24) - (now - datetime.fromisoformat(last))
-        hours, minutes = rem.seconds//3600, (rem.seconds//60)%60
-        return await ctx.send(f"🕒 You can claim daily in {hours}h {minutes}m")
-    await update_fields(ctx.guild.id, ctx.author.id,
-                        {"wallet": data["wallet"] + 500, "last_daily": now.isoformat()})
-    await ctx.send("✅ You claimed your daily reward of 500 coins!")
+        return await ctx.send(f"🕒 Claim again in {rem.seconds//3600}h {(rem.seconds//60)%60}m")
 
-@bot.command(name="work", aliases=["earn"])
+    new_balance = data['wallet'] + 500
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"wallet": new_balance, "last_daily": now.isoformat()}}
+    )
+    await ctx.send("✅ You claimed your daily reward of 500 coins!")
+    
+@bot.command()
 async def work(ctx):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
+    data = await get_user(ctx.guild.id, ctx.author.id)
     now = datetime.utcnow()
     last = data.get("last_work")
+
     if last and now - datetime.fromisoformat(last) < timedelta(minutes=30):
         rem = timedelta(minutes=30) - (now - datetime.fromisoformat(last))
         return await ctx.send(f"🕒 You can work again in {rem.seconds//60} minutes")
+
     if "laptop" not in data["inventory"]:
         return await ctx.send("💻 You need a laptop to work! Buy one with `?buy laptop`.")
-    earnings = 300
-    await update_fields(ctx.guild.id, ctx.author.id,
-                        {"wallet": data["wallet"] + earnings, "last_work": now.isoformat()})
-    await ctx.send(f"💼 You worked and earned {earnings} coins!")
 
+    earnings = 300
+    new_wallet = data["wallet"] + earnings
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"wallet": new_wallet, "last_work": now.isoformat()}}
+    )
+    await ctx.send(f"💼 You worked and earned {earnings} coins!")
+    
 @bot.command()
 async def beg(ctx):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
+    data = await get_user(ctx.guild.id, ctx.author.id)
     now = datetime.utcnow()
     last = data.get("last_beg")
+
     if last and now - datetime.fromisoformat(last) < timedelta(minutes=15):
         rem = timedelta(minutes=15) - (now - datetime.fromisoformat(last))
         return await ctx.send(f"🕒 You can beg again in {rem.seconds//60} minutes")
-    amount = random.randint(50,200)
-    await update_fields(ctx.guild.id, ctx.author.id,
-                        {"wallet": data["wallet"] + amount, "last_beg": now.isoformat()})
-    await ctx.send(f"🙇 You begged and received {amount} coins!")
 
-@bot.command(name="deposit", aliases=["dep"])
+    amount = random.randint(50, 200)
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"wallet": data["wallet"] + amount, "last_beg": now.isoformat()}}
+    )
+    await ctx.send(f"🙇 You begged and received {amount} coins!")
+    
+@bot.command(aliases=["dep"])
 async def deposit(ctx, amount: int):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
+    data = await get_user(ctx.guild.id, ctx.author.id)
     if amount <= 0 or amount > data["wallet"]:
         return await ctx.send("❌ Invalid deposit amount.")
-    await update_fields(ctx.guild.id, ctx.author.id,
-                        {"wallet": data["wallet"] - amount, "bank": data["bank"] + amount})
-    await ctx.send(f"🏦 You deposited {amount} coins.")
 
-@bot.command(name="withdraw", aliases=["with"])
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {
+            "wallet": data["wallet"] - amount,
+            "bank": data["bank"] + amount
+        }}
+    )
+    await ctx.send(f"🏦 You deposited {amount} coins.")
+    
+@bot.command(aliases=["with"])
 async def withdraw(ctx, amount: int):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
+    data = await get_user(ctx.guild.id, ctx.author.id)
     if amount <= 0 or amount > data["bank"]:
         return await ctx.send("❌ Invalid withdrawal amount.")
-    await update_fields(ctx.guild.id, ctx.author.id,
-                        {"wallet": data["wallet"] + amount, "bank": data["bank"] - amount})
-    await ctx.send(f"💰 You withdrew {amount} coins.")
 
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {
+            "wallet": data["wallet"] + amount,
+            "bank": data["bank"] - amount
+        }}
+    )
+    await ctx.send(f"💰 You withdrew {amount} coins.")
+    
 @bot.command()
 async def shop(ctx):
-    items = load_shop_items()
-    if not items:
-        return await ctx.send("🛍️ Shop is empty.")
-    embed = Embed(title="🛍️ Shop", color=discord.Color.green())
-    for name, info in items.items():
-        embed.add_field(name=f"{name.capitalize()} - 🪙 {info['price']}", value=info['description'], inline=False)
+    shop_items = db["shop"].find()
+    embed = discord.Embed(title="🛍️ Shop", color=discord.Color.green())
+    async for item in shop_items:
+        embed.add_field(
+            name=f"{item['_id'].capitalize()} - 🪙 {item['price']}",
+            value=item['description'],
+            inline=False
+        )
     await ctx.send(embed=embed)
-
+    
 @bot.command()
 async def buy(ctx, item: str):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
-    store = load_shop_items()
     item = item.lower()
-    if item not in store:
+    store_item = db["shop"].find_one({"_id": item})
+    if not store_item:
         return await ctx.send("❌ Item not found.")
-    price = store[item]["price"]
-    if data["wallet"] < price:
-        return await ctx.send("❌ Not enough coins.")
-    data["wallet"] -= price
-    data["inventory"].append(item)
-    await econ.update_one({"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-                          {"$set": {"wallet": data["wallet"], "inventory": data["inventory"]}})
-    await ctx.send(f"✅ You bought a {item}!")
 
+    data = await get_user(ctx.guild.id, ctx.author.id)
+    if data["wallet"] < store_item["price"]:
+        return await ctx.send("❌ Not enough coins.")
+
+    data["wallet"] -= store_item["price"]
+    data["inventory"].append(item)
+
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {
+            "wallet": data["wallet"],
+            "inventory": data["inventory"]
+        }}
+    )
+    await ctx.send(f"✅ You bought a {item}!")
+    
+@bot.command(aliases=["inv"])
+async def inventory(ctx):
+    data = await get_user(ctx.guild.id, ctx.author.id)
+    inv = data.get("inventory", [])
+
+    if not inv:
+        return await ctx.send("🎒 Your inventory is empty.")
+
+    counts = {}
+    for item in inv:
+        counts[item] = counts.get(item, 0) + 1
+
+    description = "\n".join(f"{name.capitalize()} x{count}" for name, count in counts.items())
+    embed = discord.Embed(title=f"{ctx.author.display_name}'s Inventory", description=description, color=discord.Color.purple())
+    await ctx.send(embed=embed)
+    
+@bot.command(aliases=["pay"])
+async def give(ctx, member: discord.Member, amount: int):
+    if member == ctx.author or amount <= 0:
+        return await ctx.send("❌ Invalid transaction.")
+
+    sender = await get_user(ctx.guild.id, ctx.author.id)
+    receiver = await get_user(ctx.guild.id, member.id)
+
+    if sender["wallet"] < amount:
+        return await ctx.send("❌ You don't have enough coins.")
+
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"wallet": sender["wallet"] - amount}}
+    )
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{member.id}"},
+        {"$set": {"wallet": receiver["wallet"] + amount}}
+    )
+    await ctx.send(f"🤝 You gave {amount} coins to {member.mention}!")
+    
+@bot.command(aliases=["lb"])
+async def leaderboard(ctx):
+    cursor = economy_col.find({"guild": str(ctx.guild.id)})
+    users = []
+    async for doc in cursor:
+        total = doc.get("wallet", 0) + doc.get("bank", 0)
+        users.append((doc["user"], total))
+
+    users.sort(key=lambda x: x[1], reverse=True)
+    embed = discord.Embed(title="🏆 Leaderboard - Richest Users", color=discord.Color.teal())
+    for i, (uid, total) in enumerate(users[:10], start=1):
+        member = ctx.guild.get_member(int(uid))
+        name = member.display_name if member else f"User {uid}"
+        embed.add_field(name=f"#{i} {name}", value=f"🪙 {total} coins", inline=False)
+    await ctx.send(embed=embed)
+    
 @bot.command()
 async def gamble(ctx, amount: int):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
+    data = await get_user(ctx.guild.id, ctx.author.id)
+
     if amount <= 0 or amount > data["wallet"]:
         return await ctx.send("❌ Invalid amount to gamble.")
 
-    key = (ctx.guild.id, ctx.author.id)
-    now = datetime.utcnow()
-    boost_active = False
-    if key in active_effects:
-        boost_expiry = active_effects[key].get("gamble_boost")
-        if boost_expiry and boost_expiry > now:
-            boost_active = True
-        else:
-            active_effects[key].pop("gamble_boost", None)
-
-    win_chance = 0.75 if boost_active else 0.5
+    # add effects/boosts here
+    win_chance = 0.5
     won = random.random() < win_chance
 
-    new_wallet = data["wallet"] + (amount if won else -amount)
-    await update_fields(ctx.guild.id, ctx.author.id, {"wallet": new_wallet})
+    new_wallet = data["wallet"] + amount if won else data["wallet"] - amount
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"wallet": new_wallet}}
+    )
 
     if won:
         await ctx.send(f"🎉 You won {amount} coins from gambling!")
     else:
         await ctx.send(f"💸 You lost {amount} coins from gambling.")
 
-@bot.command(name="inventory", aliases=["inv"])
-async def inventory(ctx):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
-    inv = data.get("inventory", [])
+@bot.command()
+async def fish(ctx):
+    data = await get_user(ctx.guild.id, ctx.author.id)
 
-    if not inv:
-        return await ctx.send("🎒 Your inventory is empty.")
+    if "fishing_rod" not in data["inventory"]:
+        return await ctx.send("🎣 You need a fishing rod to fish! Buy one with `?buy fishing_rod`.")
 
-    # count items
-    counts = {}
-    for item in inv:
-        counts[item] = counts.get(item, 0) + 1
+    catch = random.choice(fishes)
+    data["wallet"] += catch[1]
 
-    # format output
-    description = "\n".join(f"{name.capitalize()} x{count}" for name, count in counts.items())
-    embed = Embed(title=f"{ctx.author.display_name}'s Inventory", description=description, color=discord.Color.purple())
-    await ctx.send(embed=embed)
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"wallet": data["wallet"]}}
+    )
 
-@bot.command(name="give", aliases=["pay"])
-async def give(ctx, member: discord.Member, amount: int):
-    if member == ctx.author:
-        return await ctx.send("❌ You can't give coins to yourself.")
-    if amount <= 0:
-        return await ctx.send("❌ Amount must be greater than 0.")
-
-    sender = await get_user_data(ctx.guild.id, ctx.author.id)
-    receiver = await get_user_data(ctx.guild.id, member.id)
-
-    if sender["wallet"] < amount:
-        return await ctx.send("❌ You don't have enough coins.")
-
-    # update balances
-    await update_fields(ctx.guild.id, ctx.author.id, {"wallet": sender["wallet"] - amount})
-    await update_fields(ctx.guild.id, member.id, {"wallet": receiver["wallet"] + amount})
-
-    await ctx.send(f"🤝 You gave {amount} coins to {member.mention}!")
-
-@bot.command(name="leaderboard", aliases=["lb"])
-async def leaderboard(ctx):
-    cursor = econ.find({"guild": str(ctx.guild.id)})
-    users = []
-    async for doc in cursor:
-        total = doc.get("wallet", 0) + doc.get("bank", 0)
-        users.append((doc["_id"].split("-")[1], total))
-
-    if not users:
-        return await ctx.send("📉 No economy data found for this server.")
-
-    users.sort(key=lambda x: x[1], reverse=True)
-    embed = Embed(title="🏆 Leaderboard - Richest Users", color=discord.Color.teal())
-
-    for i, (user_id, total) in enumerate(users[:10], start=1):
-        member = ctx.guild.get_member(int(user_id))
-        name = member.display_name if member else f"User {user_id}"
-        embed.add_field(name=f"#{i} {name}", value=f"🪙 {total} coins", inline=False)
-
-    await ctx.send(embed=embed)
-
-@bot.command(name="rob", aliases=["steal"])
+    await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
+    
+@bot.command(aliases=["steal"])
 async def rob(ctx, member: discord.Member):
     if member == ctx.author:
         return await ctx.send("❌ You can't rob yourself!")
 
-    robber = await get_user_data(ctx.guild.id, ctx.author.id)
-    victim = await get_user_data(ctx.guild.id, member.id)
+    robber = await get_user(ctx.guild.id, ctx.author.id)
+    victim = await get_user(ctx.guild.id, member.id)
 
     if robber["wallet"] < 500:
         return await ctx.send("❌ You need at least 500 coins to attempt a robbery.")
     if victim["wallet"] < 300:
         return await ctx.send("❌ That user doesn't have enough coins to be robbed.")
 
-    amount = random.randint(100, min(robber["wallet"], victim["wallet"], 500))
+    amount = random.randint(100, min(500, victim["wallet"], robber["wallet"]))
     robber["wallet"] += amount
     victim["wallet"] -= amount
 
-    await update_fields(ctx.guild.id, ctx.author.id, {"wallet": robber["wallet"]})
-    await update_fields(ctx.guild.id, member.id, {"wallet": victim["wallet"]})
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"wallet": robber["wallet"]}}
+    )
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{member.id}"},
+        {"$set": {"wallet": victim["wallet"]}}
+    )
 
     await ctx.send(f"💰 You robbed {member.display_name} and stole {amount} coins!")
-
-@bot.command()
-async def fish(ctx):
-    data = await get_user_data(ctx.guild.id, ctx.author.id)
-    if "fishing_rod" not in data["inventory"]:
-        return await ctx.send("🎣 You need a fishing rod to fish! Buy one with `?buy fishing_rod`")
-
-    catch = random.choice(fishes)  # define `fishes = [("Salmon", 100), ...]` elsewhere
-    data["wallet"] += catch[1]
-    await update_fields(ctx.guild.id, ctx.author.id, {"wallet": data["wallet"]})
-
-    await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
-
-@bot.command()
-async def afk(ctx, *, reason="AFK"):
-    gid = str(ctx.guild.id)
-    uid = str(ctx.author.id)
-    
-    # save AFK in mongodb per guild
-    set_afk_db(gid, uid, reason, datetime.utcnow().isoformat())
-
-    try:
-        await ctx.author.edit(nick=f"[AFK] {ctx.author.display_name}")
-    except:
-        pass
-
-    await ctx.send(f"✅ {ctx.author.mention} is now AFK: {reason}")
-
-@bot.command()
-@staff_only()
-async def testwelcome(ctx, member: discord.Member = None):
-    member = member or ctx.author
-    gid = str(ctx.guild.id)
-    channel_id = config.get("welcome_channels", {}).get(gid)
-    if not channel_id:
-        return await ctx.send("⚠️ Welcome channel not set. Use `?setwelcome #channel`")
-    channel = bot.get_channel(channel_id)
-    if not channel:
-        return await ctx.send("⚠️ Could not find welcome channel.")
-
-    embed = discord.Embed(
-        title="Welcome to Duck Paradise 🦆",
-        description=(
-            f"Welcome, {member.mention}!\n"
-            f"You are our **{ctx.guild.member_count}th** member!\n\n"
-            f"⭐ Quack in <#main-pond>\n"
-            f"⭐ Equip tags in <#pond-info>\n"
-            f"⭐ Boost the server and earn <@&Golden Feather> role!"
-        ),
-        color=discord.Color.yellow()
-    )
-    embed.set_image(url="https://i.imgur.com/VyH3RlX.png")
-    await channel.send(embed=embed)
-    await ctx.send("✅ Sent test welcome message.")
-
-@bot.command()
-@staff_only()
-async def testboost(ctx, member: discord.Member = None):
-    member = member or ctx.author
-    gid = str(ctx.guild.id)
-    channel_id = config.get("boost_channels", {}).get(gid)
-    if not channel_id:
-        return await ctx.send("⚠️ Boost channel not set. Use `?setboost #channel`")
-    channel = bot.get_channel(channel_id)
-    if not channel:
-        return await ctx.send("⚠️ Could not find boost channel.")
-
-    embed = discord.Embed(
-        title="💖 Thanks for boosting!",
-        description=f"{member.mention} just boosted the pond! 🌟",
-        color=discord.Color.purple()
-    )
-    embed.set_thumbnail(url=member.avatar.url if member.avatar else "")
-    await channel.send(embed=embed)
-    await ctx.send("✅ Sent test boost message.")
-
-@bot.command()
-@staff_only()
-async def setwelcome(ctx, channel: discord.TextChannel):
-    config["welcome_channels"][str(ctx.guild.id)] = channel.id
-    save_config(config)
-    await ctx.send(f"✅ Welcome channel set to {channel.mention}")
-
-@bot.command()
-@staff_only()
-async def setboost(ctx, channel: discord.TextChannel):
-    config["boost_channels"][str(ctx.guild.id)] = channel.id
-    save_config(config)
-    await ctx.send(f"✅ Boost channel set to {channel.mention}")
-
-@bot.event
-async def on_member_join(member):
-    guild_id = str(member.guild.id)
-    channel_id = config.get("welcome_channels", {}).get(guild_id)
-    if channel_id:
-        channel = bot.get_channel(channel_id)
-        if channel:
-            embed = discord.Embed(
-                title="Welcome to Duck Paradise 🦆",
-                description=(
-                    f"Welcome, {member.mention}!\n"
-                    f"You are our **{member.guild.member_count}th** member!\n\n"
-                    f"⭐ Quack in <#main-pond>\n"
-                    f"⭐ Equip tags in <#pond-info>\n"
-                    f"⭐ Boost the server and earn <@&Golden Feather> role!"
-                ),
-                color=discord.Color.yellow()
-            )
-            embed.set_image(url="https://media.discordapp.net/attachments/1370374741579534408/1386456926300409939/duckduckgo-welcome.gif?ex=6863a962&is=686257e2&hm=9260bcae31ef85f293dfa5ecfbc9925b5cc1f1dfa2415c3c955b9d318d6f87a7&=&width=648&height=216")
-            await channel.send(embed=embed)
-
-@bot.event
-async def on_member_update(before, after):
-    if before.premium_since is None and after.premium_since is not None:
-        guild_id = str(after.guild.id)
-        channel_id = config.get("boost_channels", {}).get(guild_id)
-        if channel_id:
-            channel = bot.get_channel(channel_id)
-            if channel:
-                embed = discord.Embed(
-                    title="💖 Thanks for boosting!",
-                    description=f"{after.mention} just boosted the pond! 🌟",
-                    color=discord.Color.purple()
-                )
-                embed.set_thumbnail(url=after.avatar.url if after.avatar else "")
-                await channel.send(embed=embed)
-
-def has_higher_role(issuer, target):
-    return issuer.top_role > target.top_role or issuer == issuer.guild.owner
-    
-def check_target_permission(ctx, member: discord.Member):
-    if member == ctx.author:
-        return "❌ You can't perform this action on yourself."
-    if member == ctx.guild.owner:
-        return "❌ You can't perform this action on the server owner."
-    if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
-        return "❌ You can't perform this action on someone with equal or higher role."
-    return None
-
-@bot.event
-async def on_ready():
-    for guild in bot.guilds:
-        gid = str(guild.id)
-        if "staff_roles" in config and gid in config["staff_roles"]:
-            print(f"[Config] Staff role for {guild.name}: {config['staff_roles'][gid]}")
-        if "log_channels" in config and gid in config["log_channels"]:
-            print(f"[Config] Log channel for {guild.name}: {config['log_channels'][gid]}")
-    await bot.change_presence(
-        activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck")
-    )
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    print("------")
-
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
-        await ctx.send("❌ You don’t have permission to use this command.")
-    elif bot_locks.get(str(ctx.guild.id)):
-        await ctx.send("🔒 Bot is currently locked. Only `theofficialtruck` can unlock it with `override`.")
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"⚠️ Missing arguments. Usage: `{ctx.command.name} {ctx.command.signature}`")
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ You don't have permission to use this command.")
-    elif isinstance(error, commands.CommandNotFound):
-        await ctx.send("❓ Invalid command. Use `?cmds` to see available commands.")
-    elif isinstance(error, commands.BadArgument):
-        await ctx.send("⚠️ Invalid argument type. Please check your input.")
-    else:
-        await ctx.send("❗ An unexpected error occurred while processing the command.")
-        print("--- Traceback Start ---")
-        traceback.print_exception(type(error), error, error.__traceback__)
-        print("--- Traceback End ---")
-
-class CommandPages(View):
-    def __init__(self, embeds):
-        super().__init__(timeout=None)
-        self.embeds = embeds
-        self.current_page = 0
-        self.total_pages = len(embeds)
-
-        # add navigation buttons
-        self.prev_button = Button(label="Previous", style=ButtonStyle.secondary)
-        self.next_button = Button(label="Next", style=ButtonStyle.secondary)
-
-        self.prev_button.callback = self.previous_page
-        self.next_button.callback = self.next_page
-
-        self.add_item(self.prev_button)
-        self.add_item(self.next_button)
-
-    async def update_buttons(self, interaction: Interaction):
-        # disable buttons when at the ends
-        self.prev_button.disabled = self.current_page == 0
-        self.next_button.disabled = self.current_page == self.total_pages - 1
-        await interaction.response.edit_message(embed=self.embeds[self.current_page], view=self)
-
-    async def previous_page(self, interaction: Interaction):
-        if self.current_page > 0:
-            self.current_page -= 1
-            await self.update_buttons(interaction)
-
-    async def next_page(self, interaction: Interaction):
-        if self.current_page < self.total_pages - 1:
-            self.current_page += 1
-            await self.update_buttons(interaction)
-
-class CommandPages(View):
-    def __init__(self, embeds):
-        super().__init__(timeout=None)
-        self.embeds = embeds
-        self.current_page = 0
-        self.total_pages = len(embeds)
-
-        # add navigation buttons
-        self.prev_button = Button(label="Previous", style=ButtonStyle.secondary)
-        self.next_button = Button(label="Next", style=ButtonStyle.secondary)
-
-        self.prev_button.callback = self.previous_page
-        self.next_button.callback = self.next_page
-
-        self.add_item(self.prev_button)
-        self.add_item(self.next_button)
-
-    async def update_buttons(self, interaction: Interaction):
-        self.prev_button.disabled = self.current_page == 0
-        self.next_button.disabled = self.current_page == self.total_pages - 1
-        await interaction.response.edit_message(embed=self.embeds[self.current_page], view=self)
-
-    async def previous_page(self, interaction: Interaction):
-        if self.current_page > 0:
-            self.current_page -= 1
-            await self.update_buttons(interaction)
-
-    async def next_page(self, interaction: Interaction):
-        if self.current_page < self.total_pages - 1:
-            self.current_page += 1
-            await self.update_buttons(interaction)
-
-@bot.command()
-async def cmds(ctx):
-    guild_id = str(ctx.guild.id)
-    staff_role_id = config.get("staff_roles", {}).get(guild_id)
-    staff_role = ctx.guild.get_role(staff_role_id) if staff_role_id else None
-    is_staff = staff_role in ctx.author.roles if staff_role else False
-
-    general = Embed(title="💬 General Commands", color=discord.Color.blurple())
-    general.add_field(name="?serverinfo", value="*View server information*", inline=False)
-    general.add_field(name="?cmds", value="*Show this help menu*", inline=False)
-    general.add_field(name="?staffget", value="*Check the currently set staff role*", inline=False)
-    general.add_field(name="?afk [reason]", value="*Set your AFK status*", inline=False)
-
-    staff = Embed(title="🛠️ Staff-only Commands", color=discord.Color.blurple())
-    staff.add_field(name="?kick @user [reason]", value="*Kick a member*", inline=False)
-    staff.add_field(name="?ban @user [reason]", value="*Ban a member*", inline=False)
-    staff.add_field(name="?unban <user_id>", value="*Unban a user*", inline=False)
-    staff.add_field(name="?mute @user <time> [reason]", value="*Temporarily mute a user*", inline=False)
-    staff.add_field(name="?unmute @user", value="*Unmute a user*", inline=False)
-    staff.add_field(name="?purge @user <count>", value="*Bulk delete messages*", inline=False)
-    staff.add_field(name="?warn @user [reason]", value="*Warn a user*", inline=False)
-    staff.add_field(name="?clearwarns @user", value="*Clear all user warnings*", inline=False)
-    staff.add_field(name="?slowmode <seconds>", value="*Set channel slowmode*", inline=False)
-    staff.add_field(name="?setprefix <prefix>", value="*Change the bot prefix*", inline=False)
-    staff.add_field(name="?reactionrole <msg_id> <emoji> @role", value="*Set reaction role*", inline=False)
-    staff.add_field(name="?logchannel #channel", value="*Set moderation log channel*", inline=False)
-    staff.add_field(name="?userinfo [@user]", value="*Detailed user info*", inline=False)
-    staff.add_field(name="?staffset @role", value="*Set the staff role*", inline=False)
-    staff.add_field(name="?setwelcome #channel", value="*Set welcome message channel*", inline=False)
-    staff.add_field(name="?setboost #channel", value="*Set boost message channel*", inline=False)
-    staff.add_field(name="?testwelcome [@user]", value="*Test welcome message*", inline=False)
-    staff.add_field(name="?testboost [@user]", value="*Test boost message*", inline=False)
-    staff.add_field(name="?stickynote", value="*Set a sticky message in a channel*", inline=False)
-    staff.add_field(name="?unstickynote", value="*Remove sticky message*", inline=False)
-    staff.add_field(name="?vanityroles @role [logchannel] [status message]", value="*Set up vanity roles*", inline=False)
-    staff.add_field(name="?promoters", value="*Check who's promoting*", inline=False)
-    staff.add_field(name="?resetpromoters", value="*Reset all promoters*", inline=False)
-
-    economy = Embed(title="💰 Economy Commands", color=discord.Color.blurple())
-    economy.add_field(name="?bal", value="*Check your balance*", inline=False)
-    economy.add_field(name="?daily", value="*Claim your daily reward*", inline=False)
-    economy.add_field(name="?work", value="*Earn money by working*", inline=False)
-    economy.add_field(name="?beg", value="*Beg for money*", inline=False)
-    economy.add_field(name="?dep [amount]", value="*Deposit to bank*", inline=False)
-    economy.add_field(name="?with [amount]", value="*Withdraw from bank*", inline=False)
-    economy.add_field(name="?shop", value="*View shop items*", inline=False)
-    economy.add_field(name="?buy <item>", value="*Buy an item from the shop*", inline=False)
-    economy.add_field(name="?inventory", value="*View your items*", inline=False)
-    economy.add_field(name="?use <item>", value="*Use an item from your inventory*", inline=False)
-    economy.add_field(name="?give @user <amount>", value="*Give money to another user*", inline=False)
-    economy.add_field(name="?leaderboard", value="*View the richest users*", inline=False)
-    economy.add_field(name="?rob @user", value="*Rob another user*", inline=False)
-    economy.add_field(name="?fish", value="*Go fishing to earn coins*", inline=False)
-    economy.add_field(name="?gamble <amount>", value="*Gamble your coins*", inline=False)
-
-    if is_staff:
-        view = CommandPages([general, staff, economy])
-    else:
-        view = CommandPages([general, economy])
-
-    await ctx.send(embed=view.embeds[0], view=view)
-
-@bot.command()
-async def staffset(ctx, role: discord.Role):
-    if ctx.author != ctx.guild.owner:
-        return await ctx.send("❌ Only the server owner can set the staff role.", delete_after=7)
-    guild_id = str(ctx.guild.id)
-    config.setdefault("staff_roles", {})
-    config["staff_roles"][guild_id] = role.id
-    save_config(config)
-    await ctx.send(f"✅ Staff role set to {role.mention}", delete_after=7)
-    await log_action(ctx, f"Set staff role to {role.name} (ID: {role.id})")
     
 @bot.command()
-async def staffget(ctx):
-    guild_id = str(ctx.guild.id)
-    role_id = config.get("staff_roles", {}).get(guild_id)
-    if not role_id:
-        return await ctx.send("❌ No staff role has been set for this server.", delete_after=7)
-    role = discord.utils.get(ctx.guild.roles, id=role_id)
-    if role:
-        await ctx.send(f"Staff role is set to {role.mention}", delete_after=7)
+async def use(ctx, item: str):
+    item = item.lower()
+    data = await get_user(str(ctx.guild.id), str(ctx.author.id))
+    inv = data.get("inventory", [])
+    if item not in inv:
+        return await ctx.send(f"❌ You don't have a {item} in your inventory.")
+
+    if item == "fishing_rod":
+        await ctx.send("🎣 You use your fishing rod to fish faster!")
+    elif item == "laptop":
+        await ctx.send("💻 You use your laptop to earn extra coins next time you work!")
+    
     else:
-        await ctx.send("⚠️ The saved staff role ID does not exist anymore. Please re-set it using `?staffset @role`.", delete_after=7)
+        await ctx.send(f"✅ You used a {item}, but nothing special happened.")
 
+    inv.remove(item)
+    economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"inventory": inv}}
+    )
+    
+# Kick a member
 @bot.command()
-@staff_only()
-async def logchannel(ctx, channel: discord.TextChannel):
-    guild_id = str(ctx.guild.id)
-    if "log_channels" not in config:
-        config["log_channels"] = {}
-    config["log_channels"][guild_id] = channel.id
-    save_config(config)
-    await ctx.send(f"✅ Log channel set to {channel.mention} for this server.", delete_after=7)
-    await log_action(ctx, f"Set log channel to {channel.mention}")
-
-@bot.command()
-@staff_only()
-async def kick(ctx, user: str, *, reason: str = "No reason provided"):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
-
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, member: discord.Member, *, reason="No reason provided"):
     err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err)
+    if err: return await ctx.send(err)
+    await member.kick(reason=f"{reason} (by {ctx.author})")
+    await ctx.send(f"✅ {member.mention} has been kicked.")
+    await log_action(ctx, f"Kicked {member} for: {reason}", user_id=member.id, action_type="kick")
 
-    try:
-        await member.kick(reason=f"{reason} (by {ctx.author})")
-        await ctx.send(f"Kicked {member.mention}", delete_after=7)
-        await log_action(ctx, f"kicked {member} for: {reason}", user_id=member.id, action_type="kick")
-
-        try:
-            await member.send(f"🚫 You have been kicked from **{ctx.guild.name}** for: {reason}")
-        except:
-            await log_action(ctx, f"Failed to DM kick message to {member} (ID: {member.id})")
-
-    except Exception as e:
-        await ctx.send("❌ Failed to kick the user.", delete_after=7)
-        print(f"[Kick Error] {e}")
-
+# Ban a member
 @bot.command()
-@staff_only()
-async def ban(ctx, user: str, *, reason: str = "No reason provided"):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.", delete_after=7)
-
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
     err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err, delete_after=7)
+    if err: return await ctx.send(err)
+    await member.ban(reason=f"{reason} (by {ctx.author})")
+    await ctx.send(f"✅ {member.mention} has been banned.")
+    await log_action(ctx, f"Banned {member} for: {reason}", user_id=member.id, action_type="ban")
 
-    try:
-        try:
-            await member.send(f"⛔ You have been banned from **{ctx.guild.name}** for: {reason}")
-        except:
-            await log_action(ctx, f"Failed to DM ban message to {member} (ID: {member.id})")
-
-        await member.ban(reason=f"{reason} (by {ctx.author})")
-        await ctx.send(f"{member} has been banned.", delete_after=7)
-        await log_action(ctx, f"banned {member} for: {reason}", user_id=member.id, action_type="ban")
-    except Exception as e:
-        await ctx.send("❌ Failed to ban the user.", delete_after=7)
-        print(f"[Ban Error] {e}")
-
+# Unban a user by ID
 @bot.command()
-@staff_only()
-async def unban(ctx, *, user: str):
+@commands.has_permissions(ban_members=True)
+async def unban(ctx, *, user_id: int):
     try:
-        user_id = int(user.strip("<@!>"))
-        user_obj = await bot.fetch_user(user_id)
-        await ctx.guild.unban(user_obj)
-        await ctx.send(f"✅ Unbanned {user_obj.mention}", delete_after=7)
-        await log_action(ctx, f"unbanned {user_obj}", user_id=user_obj.id, action_type="unban")
+        user = await bot.fetch_user(user_id)
+        await ctx.guild.unban(user)
+        await ctx.send(f"✅ {user.mention} has been unbanned.")
+        await log_action(ctx, f"Unbanned {user}", user_id=user.id, action_type="unban")
     except Exception as e:
-        await ctx.send("❌ Failed to unban the user.")
-        print(f"[Unban Error] {e}")
-
+        await ctx.send("❌ Failed to unban that user.")
+        
+# Mute a member temporarily or indefinitely
 @bot.command()
-@staff_only()
-async def mute(ctx, user: str, duration: str = None, *, reason: str = "No reason provided"):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
-
-    # Permission checks
-    if member == ctx.author:
-        return await ctx.send("❌ You can't mute yourself.")
-    if member == ctx.guild.owner:
-        return await ctx.send("❌ You can't mute the server owner.")
-    if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
-        return await ctx.send("❌ You can't mute someone with an equal or higher role than you.")
-
+@commands.has_permissions(manage_roles=True)
+async def mute(ctx, member: discord.Member, duration: str = None, *, reason="No reason provided"):
+    err = check_target_permission(ctx, member)
+    if err: return await ctx.send(err)
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if not mute_role:
         mute_role = await ctx.guild.create_role(name="Muted")
-        for channel in ctx.guild.channels:
-            await channel.set_permissions(mute_role, speak=False, send_messages=False)
-
-    await member.add_roles(mute_role)
-    await ctx.send(f"Muted {member.mention} for reason: {reason}")
-    await log_action(ctx, f"muted {member} for: {reason} ({duration or 'indefinitely'})", user_id=member.id, action_type="mute")
-
+        for ch in ctx.guild.channels:
+            await ch.set_permissions(mute_role, speak=False, send_messages=False)
+    await member.add_roles(mute_role, reason=reason)
+    await ctx.send(f"✅ {member.mention} has been muted. Duration: {duration or 'indefinite'}.")
+    await log_action(ctx, f"Muted {member} for: {reason} ({duration or 'indefinite'})", user_id=member.id, action_type="mute")
     if duration:
-        seconds = convert_time(duration)
-        if seconds:
-            await asyncio.sleep(seconds)
-            await member.remove_roles(mute_role)
-            await ctx.send(f"Unmuted {member.mention} after {duration}")
-            await log_action(ctx, f"{member} was automatically unmuted after {duration}", user_id=member.id, action_type="unmute")
-        else:
-            await ctx.send("Invalid time format. Use s, m, h, or d.")
+        secs = convert_time(duration)
+        if not secs:
+            return await ctx.send("❌ Invalid duration format.")
+        await asyncio.sleep(secs)
+        await member.remove_roles(mute_role, reason="Mute expired")
+        await ctx.send(f"✅ {member.mention} has been automatically unmuted.")
+        await log_action(ctx, f"Auto-unmuted {member}", user_id=member.id, action_type="unmute")
 
-@bot.command()
-@staff_only()
-async def unmute(ctx, *, user: str):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
-
-    err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err)
-
-    mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
-    if mute_role in member.roles:
-        await member.remove_roles(mute_role)
-        await ctx.send(f"Unmuted {member.mention}")
-        await log_action(ctx, f"unmuted {member}", user_id=member.id, action_type="unmute")
-    else:
-        await ctx.send(f"{member.mention} is not muted.")
-
-@bot.command()
-@staff_only()
-async def purge(ctx, user: discord.Member = None, count: int = None):
-    if count is None:
-        # if user was actually count (no @user provided)
-        if isinstance(user, int):
-            count = user
-            user = None
-        else:
-            return await ctx.send("❌ Please specify how many messages to delete.")
-
-    if count <= 0 or count > 100:
-        return await ctx.send("⚠️ You can only purge between 1 and 100 messages.")
-
-    def check(m):
-        return m.author == user if user else True
-
-    try:
-        deleted = await ctx.channel.purge(limit=count + 1, check=check)
-        await ctx.send(f"🧹 Deleted {len(deleted) - 1} messages.", delete_after=5)
-        target = f"from {user.display_name}" if user else "from all users"
-        await log_action(ctx, f"Purged {len(deleted) - 1} messages {target} in #{ctx.channel.name}")
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to manage messages here.")
-    except Exception as e:
-        await ctx.send("❗ An error occurred while purging.")
-        print(f"[Purge Error] {e}")
-
-@bot.command()
-@staff_only()
-async def warn(ctx, user: str, *, reason: str = "No reason provided"):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
-    err = check_target_permission(ctx, member)
-    if err:
-        return await ctx.send(err)
-    guild_id = str(ctx.guild.id)
-    user_id = str(member.id)
-    if guild_id not in warnings_data:
-        warnings_data[guild_id] = {}
-    if user_id not in warnings_data[guild_id]:
-        warnings_data[guild_id][user_id] = []
-    warnings_data[guild_id][user_id].append({"reason": reason, "by": str(ctx.author), "time": datetime.utcnow().isoformat()})
-    save_warnings(warnings_data)
-    await ctx.send(f"{member.mention} has been warned for: {reason}")
-    try:
-        await member.send(f"You have been warned in {ctx.guild.name} for: {reason}")
-    except:
-        await log_action(ctx, f"Failed to DM warn message to {member} (ID: {member.id})")
-    await log_action(ctx, f"warned {member} for: {reason}", user_id=member.id, action_type="warn")
-    
-@bot.command()
-@staff_only()
-async def clearwarns(ctx, user: str):
-    member = await resolve_member(ctx, user)
-    if not member:
-        return await ctx.send("❌ Could not find that user.")
-
-    guild_id = str(ctx.guild.id)
-    user_id = str(member.id)
-
-    if guild_id in warnings_data and user_id in warnings_data[guild_id]:
-        del warnings_data[guild_id][user_id]
-        save_warnings(warnings_data)
-        await ctx.send(f"✅ Cleared all warnings for {member.mention}")
-        await log_action(ctx, f"Cleared all warnings for {member}", user_id=member.id, action_type="clearwarns")
-    else:
-        await ctx.send(f"ℹ️ {member.mention} has no warnings.")
-
-@bot.command()
-@staff_only()
-async def slowmode(ctx, seconds: int):
-    await ctx.channel.edit(slowmode_delay=seconds)
-    await ctx.send(f"Set slowmode to {seconds} seconds.", delete_after=7)
-    await log_action(ctx, f"set slowmode to {seconds}s in #{ctx.channel.name}")
-
-@bot.command()
-async def setprefix(ctx, new_prefix):
-    if not ctx.guild:
-        return await ctx.send("❌ This command can't be used in DMs.", delete_after=7)
-
-    staff_role_id = config.get("staff_roles", {}).get(str(ctx.guild.id))
-    if staff_role_id is None:
-        return await ctx.send("❌ Staff role not set for this server.", delete_after=7)
-    if staff_role_id not in [role.id for role in ctx.author.roles]:
-        return await ctx.send("❌ You do not have permission to use this command.", delete_after=7)
-
-    guild_id = str(ctx.guild.id)
-    config.setdefault("prefixes", {})[guild_id] = new_prefix
-    save_config(config)
-    await ctx.send(f"✅ Prefix updated to `{new_prefix}`")
-    
-@bot.command()
-@staff_only()
-async def stickynote(ctx):
-    prompt_msg = await ctx.send("📝 Please type the sticky message you'd like to set for this channel.")
-
-    def check(msg):
-        return msg.author == ctx.author and msg.channel == ctx.channel
-
-    try:
-        reply = await bot.wait_for("message", check=check, timeout=60.0)
-    except asyncio.TimeoutError:
-        await prompt_msg.delete()
-        return await ctx.send("⏰ Timed out. Please run `?stickynote` again.", delete_after=7)
-
-    guild_id = str(ctx.guild.id)
-    channel_id = str(ctx.channel.id)
-
-    # delete old sticky if it exists
-    if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
-        try:
-            old_msg = await ctx.channel.fetch_message(int(sticky_notes[guild_id][channel_id]["message_id"]))
-            await old_msg.delete()
-        except:
-            pass
-
-    # delete setup messages
-    try:
-        await prompt_msg.delete()
-        await reply.delete()
-        await ctx.message.delete()
-    except:
-        pass
-
-    # send and save the raw sticky message
-    sticky = await ctx.send(reply.content)
-
-    if guild_id not in sticky_notes:
-        sticky_notes[guild_id] = {}
-
-    sticky_notes[guild_id][channel_id] = {
-        "message": reply.content,
-        "message_id": str(sticky.id)
-    }
-
-    save_sticky_notes(sticky_notes)
-        
-@bot.command()
-@staff_only()
-async def unstickynote(ctx):
-    guild_id = str(ctx.guild.id)
-    channel_id = str(ctx.channel.id)
-
-    if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
-        try:
-            msg_id = int(sticky_notes[guild_id][channel_id]["message_id"])
-            msg = await ctx.channel.fetch_message(msg_id)
-            await msg.delete()
-        except:
-            pass
-
-        del sticky_notes[guild_id][channel_id]
-        if not sticky_notes[guild_id]:
-            del sticky_notes[guild_id]
-        save_sticky_notes(sticky_notes)
-
-        await ctx.send("✅ Sticky note removed for this channel.", delete_after=7)
-        await ctx.message.delete(delay=7)
-    else:
-        await ctx.send("⚠️ No sticky note found for this channel.", delete_after=7)
-@bot.command()
-@staff_only()
-async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
-    try:
-        message = await ctx.channel.fetch_message(message_id)
-    except discord.NotFound:
-        return await ctx.send("❌ Message not found. Please check the message ID.", delete_after=7)
-    except discord.Forbidden:
-        return await ctx.send("❌ I don't have permission to fetch that message.", delete_after=7)
-    except discord.HTTPException as e:
-        return await ctx.send(f"❌ Failed to fetch the message: {e}", delete_after=7)
-
-    try:
-        await message.add_reaction(emoji)
-    except discord.HTTPException:
-        return await ctx.send("❌ Failed to add the emoji reaction. Make sure it's a valid emoji.")
-
-    reaction_roles[message_id] = (emoji, role.id)
-    save_reaction_roles()
-
-    await ctx.send(f"✅ Reaction role set: {emoji} → {role.mention}", delete_after=7)
-    await log_action(ctx, f"Set reaction role: {emoji} → {role.name} on message {message_id}")
-
-@bot.event
-async def on_raw_reaction_add(payload):
-    data = reactionrole.get(payload.message_id)
-    if not data or str(payload.emoji) != data[0]:
-        return
-    guild = discord.utils.get(bot.guilds, id=payload.guild_id)
-    if not guild:
-        return
-    member = guild.get_member(payload.user_id)
-    role = discord.utils.get(guild.roles, id=data[1])
-    if member and role:
-        await member.add_roles(role)
-
-@bot.event
-async def on_raw_reaction_remove(payload):
-    data = reaction_roles.get(payload.message_id)
-    if not data or str(payload.emoji) != data[0]:
-        return
-    guild = discord.utils.get(bot.guilds, id=payload.guild_id)
-    if not guild:
-        return
-    member = guild.get_member(payload.user_id)
-    role = discord.utils.get(guild.roles, id=data[1])
-    if member and role:
-        await member.remove_roles(role)
-
-@bot.event
-async def on_message(message):
-    if message.author.bot or not message.guild:
-        return
-
-    guild_id = str(message.guild.id)
-    channel_id = str(message.channel.id)
-
-    # ----- PER-GUILD LOCK HANDLING -----
-    if bot_locks.get(guild_id):
-        if str(message.author) == AUTHORIZED_RESTARTER and message.content.strip() == RESTART_PHRASE:
-            bot_locks[guild_id] = False
-            await update_bot_nickname(message.guild, False)
-            await message.channel.send("🚀 Booting up...")
-            return
-        else:
-            await message.channel.send("🔒 Bot is locked. Only `theofficialtruck` can unlock it.")
-            return
-
-    # ----- AFK REMOVAL -----
-    if message.author.id in afk_data:
-        del afk_data[message.author.id]
-        save_afk()
-        try:
-            if message.author.display_name.startswith("[AFK] "):
-                new_nick = message.author.display_name.replace("[AFK] ", "", 1)
-                await message.author.edit(nick=new_nick)
-        except:
-            pass
-        await message.channel.send(f"🟢 Welcome back {message.author.mention}, I’ve removed your AFK status.")
-
-    # ----- AFK NOTIFICATIONS -----
-    notified = set()
-    for user in message.mentions:
-        if user.id in afk_data and user.id not in notified:
-            reason = afk_data[user.id]["reason"]
-            try:
-                since = datetime.fromisoformat(afk_data[user.id]["time"])
-                delta = datetime.utcnow() - since
-                mins, secs = divmod(int(delta.total_seconds()), 60)
-                hrs, mins = divmod(mins, 60)
-                days, hrs = divmod(hrs, 24)
-                duration = (
-                    (f"{days}d " if days else "") +
-                    (f"{hrs}h " if hrs else "") +
-                    (f"{mins}m " if mins else "") +
-                    (f"{secs}s")
-                ).strip()
-                await message.reply(f"🔕 {user.display_name} is AFK: {reason} (since {duration} ago)")
-            except:
-                await message.reply(f"🔕 {user.display_name} is AFK: {reason}")
-            notified.add(user.id)
-
-    # ----- STICKY NOTE HANDLING -----
-    if guild_id in sticky_notes and channel_id in sticky_notes[guild_id]:
-        if message.author != bot.user:
-            try:
-                old_id = int(sticky_notes[guild_id][channel_id]["message_id"])
-                old_msg = await message.channel.fetch_message(old_id)
-                await old_msg.delete()
-            except:
-                pass
-
-            content = sticky_notes[guild_id][channel_id]["message"]
-            new_msg = await message.channel.send(content)
-            sticky_notes[guild_id][channel_id]["message_id"] = str(new_msg.id)
-            save_sticky_notes(sticky_notes)
-
-    # ----- COMMAND PROCESSING -----
-    await bot.process_commands(message)
-    
-@bot.command()
-@staff_only()
-async def userinfo(ctx, member: discord.Member = None):
-    member = member or ctx.author
-
-    try:
-        guild_id = str(ctx.guild.id)
-        user_id = str(member.id)
-        warnings = len(warnings_data.get(guild_id, {}).get(user_id, []))
-
-        joined_at = member.joined_at.strftime("%B %d, %Y") if member.joined_at else "Unknown"
-        created_at = member.created_at.strftime("%B %d, %Y")
-        join_days = (discord.utils.utcnow() - member.joined_at).days if member.joined_at else "Unknown"
-        create_days = (discord.utils.utcnow() - member.created_at).days if member.created_at else "Unknown"
-
-        embed = discord.Embed(
-            title="-User Info-",
-            description=f"Info for {member.mention}",
-            color=discord.Color.blurple()
-        )
-
-        embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-
-        embed.add_field(name="🆔 User ID", value=str(member.id), inline=False)
-        embed.add_field(name="👤 Nickname", value=member.nick or "None", inline=False)
-        embed.add_field(name="📅 Join Date", value=f"{joined_at}, {join_days} days ago", inline=False)
-        embed.add_field(name="📅 Creation Date", value=f"{created_at}, {create_days} days ago", inline=False)
-        embed.add_field(name="🏅 Badges", value="None", inline=False)
-        embed.add_field(name="📛 Tag", value=str(member.mention), inline=False)
-        embed.add_field(name="💎 Nitro Boosting", value="Boosting" if member.premium_since else "Member not boosting.", inline=False)
-
-        roles = [role.mention for role in member.roles if role.name != "@everyone"]
-        roles_string = ", ".join(roles) if roles else "None"
-        embed.add_field(name="🧷 Number of Roles", value=str(len(roles)), inline=False)
-        embed.add_field(name="📌 Roles", value=roles_string, inline=False)
-
-        embed.add_field(name="⚠️ Warnings", value=str(warnings), inline=False)
-
-        await ctx.send(embed=embed)
-
-    except Exception as e:
-        await ctx.send("❗ An error occurred while fetching user info.")
-        print(f"[UserInfo Error] {e}")
-
-async def update_bot_nickname(guild, locked):
-    try:
-        me = guild.me
-        if locked:
-            if not me.nick or "[🔒 Locked]" not in me.nick:
-                new_nick = f"[🔒 Locked] {me.nick or me.name}"
-                await me.edit(nick=new_nick)
-        else:
-            if me.nick and "[🔒 Locked]" in me.nick:
-                await me.edit(nick=me.nick.replace("[🔒 Locked] ", ""))
-    except Exception as e:
-        print(f"[Nickname update failed in {guild.name}] {e}")
-
+# Unmute command
 @bot.command()
 @commands.has_permissions(manage_roles=True)
-async def vanityroles(ctx, role: discord.Role, log_channel: discord.TextChannel, *, status_keyword: str):
-    guild_id = ctx.guild.id
-
-    # save config in mongodb
-    vanity_collection.update_one(
-        {"guild_id": guild_id},
-        {
-            "$set": {
-                "role_id": role.id,
-                "log_channel_id": log_channel.id,
-                "status_keyword": status_keyword,
-                "users": []
-            }
-        },
+async def unmute(ctx, member: discord.Member):
+    mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
+    if mute_role and mute_role in member.roles:
+        await member.remove_roles(mute_role, reason="Unmute command used")
+        await ctx.send(f"✅ {member.mention} has been unmuted.")
+        await log_action(ctx, f"Unmuted {member}", user_id=member.id, action_type="unmute")
+    else:
+        await ctx.send("⚠️ That member is not muted.")
+        
+# Warn a member
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
+    mod_col.update_one(
+        {"guild": str(ctx.guild.id), "user": str(member.id)},
+        {"$push": {"warnings": {"by": str(ctx.author), "reason": reason, "time": datetime.utcnow().isoformat()}}},
         upsert=True
     )
+    await ctx.send(f"⚠️ {member.mention} has been warned: {reason}")
+    await log_action(ctx, f"Warned {member} for: {reason}", user_id=member.id, action_type="warn")
 
-    await ctx.send(f"✅ Vanity role system set! Users with `{status_keyword}` in their status will get {role.mention}.")
-
-# monitor presence updates
-@bot.event
-async def on_presence_update(before, after):
-    if not after.guild or after.bot:
-        return
-
-    guild_id = after.guild.id
-    data = vanity_collection.find_one({"guild_id": guild_id})
-    if not data:
-        return
-
-    keyword = data["status_keyword"].lower()
-    role = after.guild.get_role(data["role_id"])
-    log_channel = after.guild.get_channel(data["log_channel_id"])
-
-    current_status = str(after.activity.name if after.activity else "").lower()
-
-    # if the status contains the keyword
-    if keyword in current_status:
-        if role not in after.roles:
-            try:
-                await after.add_roles(role, reason="Vanity status match")
-                embed = discord.Embed(title="🎉 Vanity Role Granted!",
-                                      description=f"{after.mention} now has the {role.mention} role!",
-                                      color=discord.Color.green())
-                await log_channel.send(embed=embed)
-
-                # save user in MongoDB
-                vanity_collection.update_one(
-                    {"guild_id": guild_id},
-                    {"$addToSet": {"users": after.id}}
-                )
-            except discord.Forbidden:
-                print("Bot lacks permissions to add the role.")
-    else:
-        # remove role if user no longer matches
-        if role in after.roles:
-            await after.remove_roles(role, reason="Status no longer matches vanity keyword")
-            vanity_collection.update_one(
-                {"guild_id": guild_id},
-                {"$pull": {"users": after.id}}
-            )
-
+# Clear warnings for a member
 @bot.command()
-@commands.has_permissions(manage_roles=True)
-async def promoters(ctx):
-    guild_id = ctx.guild.id
-    data = vanity_collection.find_one({"guild_id": guild_id})
-    if not data or not data.get("users"):
-        await ctx.send("❌ No promoters found.")
-        return
+@commands.has_permissions(manage_messages=True)
+async def clearwarns(ctx, member: discord.Member):
+    mod_col.update_one({"guild": str(ctx.guild.id), "user": str(member.id)}, {"$set": {"warnings": []}})
+    await ctx.send(f"✅ All warnings for {member.mention} have been cleared.")
+    await log_action(ctx, f"Cleared warnings for {member}", user_id=member.id, action_type="clearwarns")
+    
+# Purge messages
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def purge(ctx, count: int, member: discord.Member = None):
+    def check(m):
+        return m.author == member if member else True
+    deleted = await ctx.channel.purge(limit=count+1, check=check)
+    await ctx.send(f"🧹 Deleted {len(deleted)-1} messages.", delete_after=5)
+    await log_action(ctx, f"Purged {len(deleted)-1} messages{(' from '+member.display_name) if member else ''}", action_type="purge")
+    
+# Slowmode command
+@bot.command()
+@commands.has_permissions(manage_channels=True)
+async def slowmode(ctx, seconds: int):
+    await ctx.channel.edit(slowmode_delay=seconds)
+    await ctx.send(f"✅ Slowmode set to {seconds} seconds.")
+    await log_action(ctx, f"Set slowmode to {seconds}s in #{ctx.channel.name}", action_type="slowmode")
+    
+# Set prefix for this server
+@bot.command()
+@commands.has_permissions(manage_guild=True)
+async def setprefix(ctx, new: str):
+    settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"prefix": new}}, upsert=True)
+    await ctx.send(f"✅ Prefix updated to `{new}`.")
+    await log_action(ctx, f"Prefix changed to {new}", action_type="setprefix")
 
-    user_list = []
-    for user_id in data["users"]:
-        member = ctx.guild.get_member(user_id)
-        if member:
-            user_list.append(member.mention)
-
-    embed = discord.Embed(title="📢 Current Promoters",
-                          description="\n".join(user_list) or "None found.",
-                          color=discord.Color.blue())
+# Set log channel for moderation
+@bot.command()
+@commands.has_permissions(manage_guild=True)
+async def logchannel(ctx, channel: discord.TextChannel):
+    settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"log_channel": channel.id}}, upsert=True)
+    await ctx.send(f"✅ Log channel set to {channel.mention}.")
+    await log_action(ctx, f"Log channel set to {channel}", action_type="logchannel")
+    
+# User Info
+@bot.command()
+@commands.has_permissions(manage_guild=True)
+async def userinfo(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    join = member.joined_at.strftime("%Y-%m-%d")
+    created = member.created_at.strftime("%Y-%m-%d")
+    doc = mod_col.find_one({"guild": str(ctx.guild.id), "user": str(member.id)})
+    warns = len(doc.get("warnings", [])) if doc else 0
+    embed = discord.Embed(title="User Information", color=discord.Color.blurple())
+    embed.set_thumbnail(url=member.avatar.url if member.avatar else "")
+    embed.add_field(name="ID", value=member.id)
+    embed.add_field(name="Joined Server", value=join)
+    embed.add_field(name="Account Created", value=created)
+    embed.add_field(name="Warnings", value=warns)
     await ctx.send(embed=embed)
     
 @bot.command()
-@commands.has_permissions(manage_roles=True)
-async def resetpromoters(ctx):
-    guild_id = ctx.guild.id
-    data = vanity_collection.find_one({"guild_id": guild_id})
-    if not data:
-        await ctx.send("❌ No vanity role system configured for this server.")
-        return
-
-    role = ctx.guild.get_role(data["role_id"])
-    if not role:
-        await ctx.send("❌ The configured role no longer exists.")
-        return
-
-    await ctx.send("⚠️ Please confirm by typing: `I confirm I want to reset all the promoters.`")
-
-    def check(msg):
-        return msg.author == ctx.author and msg.channel == ctx.channel
-
+@commands.has_permissions(manage_messages=True)
+async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
     try:
-        reply = await bot.wait_for("message", check=check, timeout=30)
+        msg = await ctx.channel.fetch_message(message_id)
+        await msg.add_reaction(emoji)
+        reaction_col.update_one({"message": message_id}, {"$set": {"emoji": str(emoji), "role": role.id}}, upsert=True)
+        await ctx.send(f"✅ Reaction role set: {emoji} will grant {role.mention}.")
     except:
-        await ctx.send("❌ Timeout. Reset cancelled.")
-        return
-
-    if reply.content.strip() != "I confirm I want to reset all the promoters.":
-        await ctx.send("❌ Confirmation failed. Reset cancelled.")
-        return
-
-    # remove the role from all users
-    removed = 0
-    for user_id in data.get("users", []):
-        member = ctx.guild.get_member(user_id)
-        if member and role in member.roles:
-            try:
-                await member.remove_roles(role, reason="Reset promoters list")
-                removed += 1
-            except discord.Forbidden:
-                continue
-
-    # clear the users list in MongoDB
-    vanity_collection.update_one({"guild_id": guild_id}, {"$set": {"users": []}})
-
-    embed = discord.Embed(
-        title="🔁 Promoters Reset",
-        description=f"{removed} users were removed from the {role.mention} role and the list has been cleared.",
-        color=discord.Color.red()
-    )
-    await ctx.send(embed=embed)
+        await ctx.send("❌ Could not set reaction role. Check your permissions and message ID.")
 
 @bot.command()
-async def serverinfo(ctx):
-    await ctx.send(f"Server: {ctx.guild.name}\nID: {ctx.guild.id}\nMembers: {ctx.guild.member_count}")
-
-def convert_time(time_str: str):
+@commands.has_permissions(manage_channels=True)
+async def stickynote(ctx):
+    await ctx.send("📝 Please type the message to pin as sticky:")
+    def check(m): return m.author == ctx.author and m.channel == ctx.channel
     try:
-        units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
-        return int(time_str[:-1]) * units[time_str[-1]]
-    except (ValueError, KeyError):
-        return None
+        reply = await bot.wait_for("message", check=check, timeout=60)
+        sent = await ctx.send(reply.content)
+        sticky_col.update_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)},
+                              {"$set": {"text": reply.content, "message": sent.id}}, upsert=True)
+        await ctx.send("✅ Sticky note created.")
+    except asyncio.TimeoutError:
+        await ctx.send("❌ Timeout. Sticky note creation cancelled.")
 
-if __name__ == '__main__':
-    import tempfile
-    import shutil
+@bot.command()
+@commands.has_permissions(manage_channels=True)
+async def unstickynote(ctx):
+    doc = sticky_col.find_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)})
+    if doc:
+        try:
+            msg = await ctx.channel.fetch_message(doc["message"])
+            await msg.delete()
+        except: pass
+        sticky_col.delete_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)})
+        await ctx.send("✅ Sticky note removed.")
+    else:
+        await ctx.send("⚠️ No sticky note set for this channel.")
+        
+@bot.command()
+async def serverinfo(ctx):
+    await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
+    
+@commands.hybrid_command(name="cmds", description="Show all available bot commands")
+async def cmds(ctx):
+    doc = settings_col.find_one({"guild": str(ctx.guild.id)})
+    staff_role = ctx.guild.get_role(doc.get("staff_role")) if doc else None
+    is_staff = staff_role in ctx.author.roles if staff_role else False
 
-    def test_convert_time():
-        assert convert_time("10s") == 10
-        assert convert_time("2m") == 120
-        assert convert_time("1h") == 3600
-        assert convert_time("1d") == 86400
-        assert convert_time("5x") is None
-        assert convert_time("abc") is None
+    # GENERAL COMMANDS
+    general = discord.Embed(title="💬 General Commands", color=discord.Color.blurple())
+    general.add_field(name="?serverinfo", value="View server information", inline=False)
+    general.add_field(name="?cmds", value="Show this help menu", inline=False)
+    general.add_field(name="?afk [reason]", value="Set your AFK status", inline=False)
 
-    def test_warning_file_rw():
-        backup = shutil.copy(WARNINGS_FILE, WARNINGS_FILE + ".bak") if os.path.exists(WARNINGS_FILE) else None
-        test_data = {"123": {"456": [{"reason": "test", "by": "tester", "time": "now"}]} }
-        save_warnings(test_data)
-        loaded = load_warnings()
-        assert loaded == test_data
-        if backup:
-            shutil.move(WARNINGS_FILE + ".bak", WARNINGS_FILE)
-        else:
-            os.remove(WARNINGS_FILE)
+    # ECONOMY COMMANDS
+    economy = discord.Embed(title="💰 Economy Commands", color=discord.Color.green())
+    economy.add_field(name="?balance / ?bal", value="Check your balance", inline=False)
+    economy.add_field(name="?daily", value="Claim your daily reward", inline=False)
+    economy.add_field(name="?work", value="Work to earn coins", inline=False)
+    economy.add_field(name="?beg", value="Beg for coins", inline=False)
+    economy.add_field(name="?deposit / ?dep <amount>", value="Deposit to bank", inline=False)
+    economy.add_field(name="?withdraw / ?with <amount>", value="Withdraw from bank", inline=False)
+    economy.add_field(name="?shop", value="View the shop", inline=False)
+    economy.add_field(name="?buy <item>", value="Buy an item from the shop", inline=False)
+    economy.add_field(name="?use <item>", value="Use an item from your inventory", inline=False)
+    economy.add_field(name="?inventory / ?inv", value="View your items", inline=False)
+    economy.add_field(name="?give / ?pay @user <amount>", value="Give coins to another user", inline=False)
+    economy.add_field(name="?leaderboard / ?lb", value="View the top users", inline=False)
+    economy.add_field(name="?gamble <amount>", value="Gamble your coins", inline=False)
+    economy.add_field(name="?fish", value="Go fishing to earn coins", inline=False)
+    economy.add_field(name="?rob / ?steal @user", value="Attempt to rob another user", inline=False)
 
-    def test_actions_file_rw():
-        backup = shutil.copy(ACTIONS_FILE, ACTIONS_FILE + ".bak") if os.path.exists(ACTIONS_FILE) else None
-        test_data = {"789": {"101": [{"type": "test", "by": "tester", "time": "now", "detail": "some detail"}]} }
-        save_actions(test_data)
-        loaded = load_actions()
-        assert loaded == test_data
-        if backup:
-            shutil.move(ACTIONS_FILE + ".bak", ACTIONS_FILE)
-        else:
-            os.remove(ACTIONS_FILE)
+    pages = [general, economy]
 
-    test_convert_time()
-    test_warning_file_rw()
-    test_actions_file_rw()
-    print("All tests passed!")
+    if is_staff:
+        staff = discord.Embed(title="🛠️ Staff Commands", color=discord.Color.dark_red())
+        staff.add_field(name="?kick @user [reason]", value="Kick a member", inline=False)
+        staff.add_field(name="?ban @user [reason]", value="Ban a member", inline=False)
+        staff.add_field(name="?unban <user_id>", value="Unban a user", inline=False)
+        staff.add_field(name="?mute @user <time> [reason]", value="Mute a user temporarily", inline=False)
+        staff.add_field(name="?unmute @user", value="Unmute a user", inline=False)
+        staff.add_field(name="?purge <count> [@user]", value="Bulk delete messages", inline=False)
+        staff.add_field(name="?warn @user [reason]", value="Warn a user", inline=False)
+        staff.add_field(name="?clearwarns @user", value="Clear all warnings", inline=False)
+        staff.add_field(name="?slowmode <seconds>", value="Set slowmode for this channel", inline=False)
+        staff.add_field(name="?setprefix <prefix>", value="Change the bot prefix", inline=False)
+        staff.add_field(name="?logchannel #channel", value="Set the moderation log channel", inline=False)
+        staff.add_field(name="?reactionrole <msg_id> <emoji> @role", value="Set up a reaction role", inline=False)
+        staff.add_field(name="?stickynote", value="Set a sticky note in this channel", inline=False)
+        staff.add_field(name="?unstickynote", value="Remove the sticky note", inline=False)
+        staff.add_field(name="?setwelcome #channel", value="Set the welcome channel", inline=False)
+        staff.add_field(name="?setboost #channel", value="Set the boost message channel", inline=False)
+        staff.add_field(name="?testwelcome [@user]", value="Send a test welcome message", inline=False)
+        staff.add_field(name="?testboost [@user]", value="Send a test boost message", inline=False)
+        staff.add_field(name="?staffset @role", value="Set the staff role", inline=False)
+        staff.add_field(name="?staffget", value="Show the configured staff role", inline=False)
+        staff.add_field(name="?userinfo [@user]", value="View detailed user info", inline=False)
+        staff.add_field(name="?vanityroles @role #logchannel <status>", value="Track users with keyword in status", inline=False)
+        staff.add_field(name="?promoters", value="View users with the vanity role", inline=False)
+        staff.add_field(name="?resetpromoters", value="Clear all users from the vanity role", inline=False)
+        pages.append(staff)
 
-keep_alive()
-bot.run(TOKEN)
+    view = CommandPages(pages)
+    await ctx.send(embed=pages[0], view=view)
+
+@bot.command()
+async def stop(ctx):
+    bot_locks[str(ctx.guild.id)] = True
+    await ctx.send("🔒 bot locked. use 'override' by theofficialtruck to unlock.")
+
+@bot.command()
+async def override(ctx):
+    if str(ctx.author) == "theofficialtruck":
+        bot_locks[str(ctx.guild.id)] = False
+        await ctx.send("🚀 bot unlocked!")
+    else:
+        await ctx.send("❌ you don't have permission.")
+
+@bot.event
+async def on_ready():
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck"))
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} slash commands.")
+    except Exception as e:
+        print(f"❌ Slash command sync failed: {e}")
+    print(f"Logged in as {bot.user}")
+
+if __name__ == "__main__":
+    import keep_alive
+    bot.run(TOKEN)
