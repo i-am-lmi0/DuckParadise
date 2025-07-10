@@ -7,6 +7,7 @@ from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
 from discord.ext.commands import Bot, when_mentioned_or
 from discord import app_commands
+from flask import Flask
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -45,6 +46,16 @@ async def global_lock_check(ctx):
         await ctx.send("🔒 bot is locked — only `override` by theofficialtruck works")
         return False
     return True
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+    
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
 # 2. UTIL FUNCTIONS ===========================================
 def staff_only():
