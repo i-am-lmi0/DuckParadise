@@ -33,6 +33,7 @@ AUTHORIZED_RESTARTER = "theofficialtruck"
 RESTART_PHRASE = "override"
 mongo = MongoClient(os.getenv("MONGO_URI"))
 db = mongo["discord_bot"]
+vanity_collection = db["vanityroles"]
 econ = db["economy"]
 active_effects = {}
 sticky_cooldowns = {}
