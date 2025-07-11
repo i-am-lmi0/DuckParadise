@@ -696,7 +696,7 @@ async def unstickynote(ctx):
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
     
-@commands.hybrid_command(name="cmds", description="Show all available bot commands")
+@bot.command()
 async def cmds(ctx):
     doc = settings_col.find_one({"guild": str(ctx.guild.id)})
     staff_role = ctx.guild.get_role(doc.get("staff_role")) if doc else None
