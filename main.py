@@ -793,7 +793,8 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 if __name__ == "__main__":
-    #keep_alive.keep_alive()
-    print("✅ Bot is starting...")
+    import keep_alive
+    keep_alive.keep_alive()
+    
     print("🔁 Attempting to connect to Discord...")
     bot.run(TOKEN)
