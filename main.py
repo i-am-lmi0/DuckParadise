@@ -69,10 +69,10 @@ if __name__ == '__main__':
 def staff_only():
     def predicate(ctx):
         guild_id = str(ctx.guild.id)
-        staff_role_id = settings_col.find_one({"guild": guild_id}, {"_id": 0, "staff_role": 1})
-        if not staff_role_id or not staff_role_id.get("staff_role"):
+        settings = settings_col.find_one({"guild": guild_id})
+        if not settings or "staff_role" not in settings:
             return False
-        role = discord.utils.get(ctx.guild.roles, id=staff_role_id["staff_role"])
+        role = discord.utils.get(ctx.guild.roles, id=settings["staff_role"])
         return role in ctx.author.roles if role else False
     return commands.check(predicate)
 
@@ -178,11 +178,17 @@ class CommandPages(View):
         
 # 3. COMMANDS =================================================
 @bot.command()
-@commands.guild_only()
 async def staffset(ctx, role: discord.Role):
-    settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"staff_role": role.id}}, upsert=True)
-    await ctx.send(f"✅ Staff role set to {role.mention}.")
-    await log_action(ctx, f"Staff role set to {role}", action_type="staffset")
+    if ctx.author != ctx.guild.owner:
+        return await ctx.send("❌ Only the server owner can set the staff role.")
+
+    settings_col.update_one(
+        {"guild": str(ctx.guild.id)},
+        {"$set": {"staff_role": role.id}},
+        upsert=True
+    )
+
+    await ctx.send(f"✅ Staff role set to {role.mention}")
 
 @bot.command()
 @commands.guild_only()
