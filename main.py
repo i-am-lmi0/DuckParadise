@@ -8,6 +8,7 @@ from discord import ButtonStyle, Interaction
 from discord.ext.commands import Bot, when_mentioned_or
 from discord import app_commands
 from flask import Flask
+import keep_alive
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -783,5 +784,6 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 if __name__ == "__main__":
-    import keep_alive
+    keep_alive.keep_alive()
+    print("✅ Bot is starting...")
     bot.run(TOKEN)
