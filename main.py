@@ -796,4 +796,4 @@ if __name__ == "__main__":
     keep_alive.keep_alive()
     print("✅ Bot is starting...")
     print("🔁 Attempting to connect to Discord...")
-	bot.run(TOKEN)
+    bot.run(TOKEN)
