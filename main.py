@@ -792,7 +792,7 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 if __name__ == "__main__":
-    print("Step 1: Reached main.py __main__ 
+    print("Step 1: Reached main.py __main__")
 
     print("Attempting to connect to Discord...")
     bot.run(TOKEN)
