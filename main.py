@@ -30,6 +30,8 @@ try:
 except Exception as e:
     print("Failed to load TOKEN:", e)
 
+print("Top of main.py reached")
+
 fishes = [
     ("🦐 Shrimp", 100),
     ("🐟 Fish", 200),
@@ -793,4 +795,5 @@ async def on_ready():
 if __name__ == "__main__":
     keep_alive.keep_alive()
     print("✅ Bot is starting...")
-    bot.run(TOKEN)
+    print("🔁 Attempting to connect to Discord...")
+	bot.run(TOKEN)
