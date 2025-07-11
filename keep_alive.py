@@ -1,19 +1,15 @@
-# keep_alive.py
-
 from flask import Flask
-import threading
-import os
+from threading import Thread
 
-app = Flask(__name__)
+app = Flask('')
 
-@app.route("/")
-def index():
-    return "DuckParadise bot is alive!"
+@app.route('/')
+def home():
+    return "I'm alive"
 
 def run():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host='0.0.0.0', port=10000)
 
 def keep_alive():
-    thread = threading.Thread(target=run)
-    thread.start()
+    t = Thread(target=run)
+    t.start()
