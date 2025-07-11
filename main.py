@@ -42,10 +42,18 @@ fishes = [
 intents = discord.Intents.all()
 
 bot = commands.Bot(
-    command_prefix=lambda bot, msg: settings_col.find_one({"guild": str(msg.guild.id)})["prefix"] if msg.guild and settings_col.find_one({"guild": str(msg.guild.id)}) else "?",
+    command_prefix=lambda bot, msg: settings_col.find_one({"guild": str(msg.guild.id)}, {"_id": 0}).get("prefix", "?") if msg.guild and settings_col.find_one({"guild": str(msg.guild.id)}) else "?"
     intents=intents,
     strip_after_prefix=True
 )
+
+@bot.event
+async def on_guild_join(guild):
+    settings_col.update_one(
+        {"guild": str(guild.id)},
+        {"$setOnInsert": {"prefix": "?"}},
+        upsert=True
+    )
 
 bot_locks = {}
 
