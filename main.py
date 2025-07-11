@@ -52,7 +52,7 @@ bot_locks = {}
 @bot.check
 async def global_lock_check(ctx):
     if bot_locks.get(str(ctx.guild.id)):
-        await ctx.send("🔒 bot is locked — only `override` by theofficialtruck works")
+        await ctx.send("🔒 Bot is locked — only `override` by theofficialtruck works")
         return False
     return True
 
@@ -68,11 +68,11 @@ if __name__ == '__main__':
 # 2. UTIL FUNCTIONS ===========================================
 def staff_only():
     def predicate(ctx):
-        doc = settings_col.find_one({"guild": str(ctx.guild.id)})
-        role_id = doc.get("staff_role") if doc else None
-        if not role_id:
+        guild_id = str(ctx.guild.id)
+        staff_role_id = settings_col.find_one({"guild": guild_id}, {"_id": 0, "staff_role": 1})
+        if not staff_role_id or not staff_role_id.get("staff_role"):
             return False
-        role = discord.utils.get(ctx.guild.roles, id=role_id)
+        role = discord.utils.get(ctx.guild.roles, id=staff_role_id["staff_role"])
         return role in ctx.author.roles if role else False
     return commands.check(predicate)
 
@@ -525,7 +525,7 @@ async def use(ctx, item: str):
     
 # Kick a member
 @bot.command()
-@commands.has_permissions(kick_members=True)
+@staff_only()
 async def kick(ctx, member: discord.Member, *, reason="No reason provided"):
     err = check_target_permission(ctx, member)
     if err: return await ctx.send(err)
@@ -535,7 +535,7 @@ async def kick(ctx, member: discord.Member, *, reason="No reason provided"):
 
 # Ban a member
 @bot.command()
-@commands.has_permissions(ban_members=True)
+@staff_only()
 async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
     err = check_target_permission(ctx, member)
     if err: return await ctx.send(err)
@@ -545,7 +545,7 @@ async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
 
 # Unban a user by ID
 @bot.command()
-@commands.has_permissions(ban_members=True)
+@staff_only()
 async def unban(ctx, *, user_id: int):
     try:
         user = await bot.fetch_user(user_id)
@@ -557,7 +557,7 @@ async def unban(ctx, *, user_id: int):
         
 # Mute a member temporarily or indefinitely
 @bot.command()
-@commands.has_permissions(manage_roles=True)
+@staff_only()
 async def mute(ctx, member: discord.Member, duration: str = None, *, reason="No reason provided"):
     err = check_target_permission(ctx, member)
     if err: return await ctx.send(err)
@@ -580,7 +580,7 @@ async def mute(ctx, member: discord.Member, duration: str = None, *, reason="No 
 
 # Unmute command
 @bot.command()
-@commands.has_permissions(manage_roles=True)
+@staff_only()
 async def unmute(ctx, member: discord.Member):
     mute_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if mute_role and mute_role in member.roles:
@@ -592,7 +592,7 @@ async def unmute(ctx, member: discord.Member):
         
 # Warn a member
 @bot.command()
-@commands.has_permissions(manage_messages=True)
+@staff_only()
 async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
     mod_col.update_one(
         {"guild": str(ctx.guild.id), "user": str(member.id)},
@@ -604,7 +604,7 @@ async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
 
 # Clear warnings for a member
 @bot.command()
-@commands.has_permissions(manage_messages=True)
+@staff_only()
 async def clearwarns(ctx, member: discord.Member):
     mod_col.update_one({"guild": str(ctx.guild.id), "user": str(member.id)}, {"$set": {"warnings": []}})
     await ctx.send(f"✅ All warnings for {member.mention} have been cleared.")
@@ -612,7 +612,7 @@ async def clearwarns(ctx, member: discord.Member):
     
 # Purge messages
 @bot.command()
-@commands.has_permissions(manage_messages=True)
+@staff_only()
 async def purge(ctx, count: int, member: discord.Member = None):
     def check(m):
         return m.author == member if member else True
@@ -622,7 +622,7 @@ async def purge(ctx, count: int, member: discord.Member = None):
     
 # Slowmode command
 @bot.command()
-@commands.has_permissions(manage_channels=True)
+@staff_only()
 async def slowmode(ctx, seconds: int):
     await ctx.channel.edit(slowmode_delay=seconds)
     await ctx.send(f"✅ Slowmode set to {seconds} seconds.")
@@ -630,7 +630,7 @@ async def slowmode(ctx, seconds: int):
     
 # Set prefix for this server
 @bot.command()
-@commands.has_permissions(manage_guild=True)
+@staff_only()
 async def setprefix(ctx, new: str):
     settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"prefix": new}}, upsert=True)
     await ctx.send(f"✅ Prefix updated to `{new}`.")
@@ -638,7 +638,7 @@ async def setprefix(ctx, new: str):
 
 # Set log channel for moderation
 @bot.command()
-@commands.has_permissions(manage_guild=True)
+@staff_only()
 async def logchannel(ctx, channel: discord.TextChannel):
     settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"log_channel": channel.id}}, upsert=True)
     await ctx.send(f"✅ Log channel set to {channel.mention}.")
@@ -646,7 +646,7 @@ async def logchannel(ctx, channel: discord.TextChannel):
     
 # User Info
 @bot.command()
-@commands.has_permissions(manage_guild=True)
+@staff_only()
 async def userinfo(ctx, member: discord.Member = None):
     member = member or ctx.author
     join = member.joined_at.strftime("%Y-%m-%d")
@@ -662,7 +662,7 @@ async def userinfo(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
     
 @bot.command()
-@commands.has_permissions(manage_messages=True)
+@staff_only()
 async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
     try:
         msg = await ctx.channel.fetch_message(message_id)
@@ -673,7 +673,7 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
         await ctx.send("❌ Could not set reaction role. Check your permissions and message ID.")
 
 @bot.command()
-@commands.has_permissions(manage_channels=True)
+@staff_only()
 async def stickynote(ctx):
     await ctx.send("📝 Please type the message to pin as sticky:")
     def check(m): return m.author == ctx.author and m.channel == ctx.channel
@@ -687,7 +687,7 @@ async def stickynote(ctx):
         await ctx.send("❌ Timeout. Sticky note creation cancelled.")
 
 @bot.command()
-@commands.has_permissions(manage_channels=True)
+@staff_only()
 async def unstickynote(ctx):
     doc = sticky_col.find_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)})
     if doc:
@@ -768,17 +768,18 @@ async def cmds(ctx):
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
+@staff_only()
 async def stop(ctx):
     bot_locks[str(ctx.guild.id)] = True
-    await ctx.send("🔒 bot locked. use 'override' by theofficialtruck to unlock.")
+    await ctx.send("🔒 Bot locked. Use 'override' by theofficialtruck to unlock.")
 
 @bot.command()
 async def override(ctx):
     if str(ctx.author) == "theofficialtruck":
         bot_locks[str(ctx.guild.id)] = False
-        await ctx.send("🚀 bot unlocked!")
+        await ctx.send("🚀 Bot unlocked!")
     else:
-        await ctx.send("❌ you don't have permission.")
+        await ctx.send("❌ You don't have permission.")
 
 @bot.event
 async def on_ready():
