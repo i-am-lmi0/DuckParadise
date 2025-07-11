@@ -11,7 +11,7 @@ from flask import Flask
 import keep_alive
 
 # 1. SETUP ====================================================
-TOKEN = os.environ["abc123"]
+TOKEN = os.environ["DISCORD_TOKEN"]
 mongo = MongoClient(os.getenv("MONGO_URI"))
 db = mongo["discord_bot"]
 settings_col = db["guild_settings"]
