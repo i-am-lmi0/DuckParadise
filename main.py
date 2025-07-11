@@ -23,6 +23,13 @@ vanity_col = db["vanityroles"]
 sticky_col = db["stickynotes"]
 reaction_col = db["reactionroles"]
 
+try:
+    print("Loading bot...")
+    TOKEN = os.environ["DISCORD_TOKEN"]
+    print("Token loaded.")
+except Exception as e:
+    print("Failed to load TOKEN:", e)
+
 fishes = [
     ("🦐 Shrimp", 100),
     ("🐟 Fish", 200),
