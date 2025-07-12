@@ -1,7 +1,9 @@
 import os, asyncio, random, traceback
 from datetime import datetime, timedelta
 from pymongo import MongoClient
-from discord.ui import View, Button
+#import discord
+#from discord.ext import commands, tasks
+#from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
 from discord.ext.commands import Bot, when_mentioned_or
 from discord import app_commands
