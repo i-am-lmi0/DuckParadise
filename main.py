@@ -1,6 +1,5 @@
 import os, asyncio, random, traceback
 from datetime import datetime, timedelta
-from discord.ext import commands
 from pymongo import MongoClient
 from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
