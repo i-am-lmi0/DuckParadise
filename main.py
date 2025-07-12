@@ -1,17 +1,19 @@
 import os, asyncio, random, traceback
 from datetime import datetime, timedelta
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from pymongo import MongoClient
 from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
 from discord.ext.commands import Bot, when_mentioned_or
 from discord import app_commands
 from flask import Flask
+from motor.motor_asyncio import AsyncIOMotorClient
+import threading
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
-mongo = MongoClient(os.getenv("MONGO_URI"))
+mongo = AsyncIOMotorClient(os.getenv("MONGO_URI"))
 db = mongo["discord_bot"]
 settings_col = db["guild_settings"]
 logs_col = db["logs"]
@@ -21,13 +23,7 @@ afk_col = db["afk"]
 vanity_col = db["vanityroles"]
 sticky_col = db["stickynotes"]
 reaction_col = db["reactionroles"]
-
-try:
-    print("Loading bot...")
-    TOKEN = os.environ["DISCORD_TOKEN"]
-    print("Token loaded.")
-except Exception as e:
-    print("Failed to load TOKEN:", e)
+shop_col = db["shop"]
 
 print("Top of main.py reached")
 
@@ -42,7 +38,7 @@ fishes = [
 intents = discord.Intents.all()
 
 bot = commands.Bot(
-    command_prefix=lambda bot, msg: settings_col.find_one({"guild": str(msg.guild.id)}, {"_id": 0}).get("prefix", "?") if msg.guild and settings_col.find_one({"guild": str(msg.guild.id)}) else "?"
+    command_prefix=get_prefix,
     intents=intents,
     strip_after_prefix=True
 )
@@ -117,7 +113,7 @@ def check_target_permission(ctx, member: discord.Member):
 async def get_prefix(bot, message):
     if not message.guild:
         return "?"
-    doc = settings_col.find_one({"guild": str(message.guild.id)})
+    doc = await settings_col.find_one({"guild": str(message.guild.id)})
     return doc.get("prefix", "?") if doc else "?"
     
 async def log_action(ctx, message, user_id=None, action_type=None):
@@ -183,6 +179,47 @@ class CommandPages(View):
     async def show_next(self, interaction: Interaction):
         self.index = (self.index + 1) % len(self.embeds)
         await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+        
+@tasks.loop(minutes=1)
+async def check_expired_mutes():
+    now = datetime.utcnow()
+    async for doc in mod_col.find({"muted_until": {"$exists": True}}):
+        try:
+            mute_until = datetime.fromisoformat(doc["muted_until"])
+            if mute_until <= now:
+                guild = bot.get_guild(int(doc["guild"]))
+                if not guild:
+                    continue
+                member = guild.get_member(int(doc["user"]))
+                if not member:
+                    continue
+                mute_role = discord.utils.get(guild.roles, name="Muted")
+                if mute_role and mute_role in member.roles:
+                    await member.remove_roles(mute_role, reason="Mute expired")
+                    await log_action(ctx=None, message=f"Auto-unmuted {member}", user_id=member.id, action_type="unmute")
+
+                mod_col.update_one(
+                    {"guild": doc["guild"], "user": doc["user"]},
+                    {"$unset": {"muted_until": ""}}
+                )
+        except Exception as e:
+            print(f"[Auto-unmute error] {e}")
+
+@check_expired_mutes.before_loop
+async def before_unmute_loop():
+    await bot.wait_until_ready()
+
+# on_ready event
+@bot.event
+async def on_ready():
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck"))
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} slash commands.")
+    except Exception as e:
+        print(f"❌ Slash command sync failed: {e}")
+    check_expired_mutes.start()
+    print(f"🎉 Bot ready — Logged in as {bot.user}")
         
 # 3. COMMANDS =================================================
 @bot.command()
@@ -518,7 +555,7 @@ async def rob(ctx, member: discord.Member):
 @bot.command()
 async def use(ctx, item: str):
     item = item.lower()
-    data = await get_user(str(ctx.guild.id), str(ctx.author.id))
+    data = await get_user(ctx.guild.id, ctx.author.id)
     inv = data.get("inventory", [])
     if item not in inv:
         return await ctx.send(f"❌ You don't have a {item} in your inventory.")
@@ -683,7 +720,8 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
         await msg.add_reaction(emoji)
         reaction_col.update_one({"message": message_id}, {"$set": {"emoji": str(emoji), "role": role.id}}, upsert=True)
         await ctx.send(f"✅ Reaction role set: {emoji} will grant {role.mention}.")
-    except:
+    except Exception as e:
+        print(f"[reactionrole error] {e}")
         await ctx.send("❌ Could not set reaction role. Check your permissions and message ID.")
 
 @bot.command()
@@ -708,7 +746,9 @@ async def unstickynote(ctx):
         try:
             msg = await ctx.channel.fetch_message(doc["message"])
             await msg.delete()
-        except: pass
+        except:
+            print(f"[stickynote error] {e}")
+            await ctx.send("❌ Could not set stickynote.")
         sticky_col.delete_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)})
         await ctx.send("✅ Sticky note removed.")
     else:
@@ -789,7 +829,7 @@ async def stop(ctx):
 
 @bot.command()
 async def override(ctx):
-    if str(ctx.author) == "theofficialtruck":
+    if ctx.author.id == 1059882387590365314:
         bot_locks[str(ctx.guild.id)] = False
         await ctx.send("🚀 Bot unlocked!")
     else:
@@ -805,8 +845,18 @@ async def on_ready():
         print(f"❌ Slash command sync failed: {e}")
     print(f"Logged in as {bot.user}")
 
-if __name__ == "__main__":
-    print("Step 1: Reached main.py __main__")
+# Flask keep-alive for Render
+app = Flask(__name__)
 
-    print("Attempting to connect to Discord...")
-    bot.run(TOKEN)
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    print("Starting bot...")
+    threading.Thread(target=run_flask).start()
+    bot.run(os.getenv("DISCORD_TOKEN"))
