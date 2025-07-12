@@ -2,7 +2,6 @@ services:
   - type: web
     name: duckparadise-bot
     env: python
+    pythonVersion: 3.11.9
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python bot/main.py"
-    build:
-      pythonVersion: 3.11.9
