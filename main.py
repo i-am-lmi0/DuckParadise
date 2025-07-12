@@ -846,17 +846,17 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
 
 # Flask keep-alive for Render
-app = Flask(__name__)
+#app = Flask(__name__)
 
-@app.route('/')
-def home():
+#@app.route('/')
+#def home():
     return "Bot is running!"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+#def run_flask():
+#    port = int(os.environ.get("PORT", 5000))
+#    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     print("Starting bot...")
-    threading.Thread(target=run_flask).start()
+    #threading.Thread(target=run_flask).start()
     bot.run(os.getenv("DISCORD_TOKEN"))
