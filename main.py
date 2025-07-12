@@ -1,15 +1,15 @@
-#import os, asyncio, random, traceback
-#from datetime import datetime, timedelta
-#from pymongo import MongoClient
+import os, asyncio, random, traceback
+from datetime import datetime, timedelta
+from pymongo import MongoClient
 #import discord
 #from discord.ext import commands, tasks
 #from discord.ui import View, Button
-#from discord import ButtonStyle, Interaction
-#from discord.ext.commands import Bot, when_mentioned_or
-#from discord import app_commands
-#from flask import Flask
-#from motor.motor_asyncio import AsyncIOMotorClient
-#import threading
+from discord import ButtonStyle, Interaction
+from discord.ext.commands import Bot, when_mentioned_or
+from discord import app_commands
+from flask import Flask
+from motor.motor_asyncio import AsyncIOMotorClient
+import threading
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
