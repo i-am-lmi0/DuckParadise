@@ -1,6 +1,4 @@
-discord.py
-Flask
-pymongo[srv]
-discord.py[no-voice]==2.3.2
-motor==3.4.0
+discord.py==2.3.2
 flask==2.3.3
+pymongo[srv]
+motor==3.4.0
