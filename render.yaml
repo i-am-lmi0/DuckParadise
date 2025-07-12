@@ -4,3 +4,5 @@ services:
     env: python
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python bot/main.py"
+    build:
+      pythonVersion: 3.11.9
