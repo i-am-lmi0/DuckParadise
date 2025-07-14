@@ -42,6 +42,12 @@ fishes = [
 
 intents = discord.Intents.all()
 
+async def get_prefix(bot, message):
+    if not message.guild:
+        return "?"
+    doc = await settings_col.find_one({"guild": str(message.guild.id)})
+    return doc.get("prefix", "?") if doc else "?"
+
 bot = commands.Bot(
     command_prefix=get_prefix,
     intents=intents,
@@ -114,12 +120,6 @@ def check_target_permission(ctx, member: discord.Member):
     if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
         return "❌ You can't perform this action on someone with an equal or higher role."
     return None
-    
-async def get_prefix(bot, message):
-    if not message.guild:
-        return "?"
-    doc = await settings_col.find_one({"guild": str(message.guild.id)})
-    return doc.get("prefix", "?") if doc else "?"
     
 async def log_action(ctx, message, user_id=None, action_type=None):
     try:
