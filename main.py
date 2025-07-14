@@ -230,7 +230,7 @@ async def staffset(ctx, role: discord.Role):
 @bot.command()
 @commands.guild_only()
 async def staffget(ctx):
-    doc = settings_col.find_one({"guild": str(ctx.guild.id)})
+    doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
     role = ctx.guild.get_role(doc.get("staff_role")) if doc else None
     if role:
         await ctx.send(f"ℹ️ Staff role is {role.mention}.")
@@ -701,7 +701,7 @@ async def userinfo(ctx, member: discord.Member = None):
     member = member or ctx.author
     join = member.joined_at.strftime("%Y-%m-%d")
     created = member.created_at.strftime("%Y-%m-%d")
-    doc = mod_col.find_one({"guild": str(ctx.guild.id), "user": str(member.id)})
+    doc = await mod_col.find_one({"guild": str(ctx.guild.id), "user": str(member.id)})
     warns = len(doc.get("warnings", [])) if doc else 0
     embed = discord.Embed(title="User Information", color=discord.Color.blurple())
     embed.set_thumbnail(url=member.avatar.url if member.avatar else "")
@@ -740,7 +740,7 @@ async def stickynote(ctx):
 @bot.command()
 @staff_only()
 async def unstickynote(ctx):
-    doc = sticky_col.find_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)})
+    doc = await sticky_col.find_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)})
     if doc:
         try:
             msg = await ctx.channel.fetch_message(doc["message"])
@@ -759,7 +759,7 @@ async def serverinfo(ctx):
     
 @bot.command()
 async def cmds(ctx):
-    doc = settings_col.find_one({"guild": str(ctx.guild.id)})
+    doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
     staff_role = ctx.guild.get_role(doc.get("staff_role")) if doc else None
     is_staff = staff_role in ctx.author.roles if staff_role else False
 
