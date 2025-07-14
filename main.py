@@ -293,21 +293,28 @@ async def resetpromoters(ctx):
 async def on_presence_update(before, after):
     if not after.guild or after.bot:
         return
-    data = vanity_col.find_one({"guild": str(after.guild.id)})
-    if not data: return
+
+    data = await vanity_col.find_one({"guild": str(after.guild.id)})
+    if not data:
+        return
+
     kw = data["keyword"].lower()
     status = str(after.activity.name or "").lower()
     role = after.guild.get_role(data["role"])
     log = after.guild.get_channel(data["log"])
     has = role in after.roles
+
     if kw in status and not has:
         await after.add_roles(role, reason="vanity match")
-        vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
-        await log.send(embed=discord.Embed(title="🎉 granted", description=f"{after.mention} got {role.mention}", color=discord.Color.green()))
+        await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
+        await log.send(embed=discord.Embed(
+            title="🎉 Granted!",
+            description=f"{after.mention} got {role.mention}",
+            color=discord.Color.green()
+        ))
     elif kw not in status and has:
         await after.remove_roles(role, reason="vanity lost")
-        vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
-
+        await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
 @bot.command(aliases=["bal"])
 async def balance(ctx, member: discord.Member = None):
     member = member or ctx.author
