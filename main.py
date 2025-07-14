@@ -1,11 +1,11 @@
-import sys
-import types
-if "audioop" not in sys.modules:
-    sys.modules["audioop"] = types.ModuleType("audioop")
-sys.modules["audioop"] = None
+import sys, types
+sys.modules["audioop"] = types.ModuleType("audioop")
+print("audioop monkey-patched")
+
 import os, asyncio, random, traceback
 from datetime import datetime, timedelta
 from pymongo import MongoClient
+import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
