@@ -1,3 +1,5 @@
+import sys
+sys.modules["audioop"] = None
 discord.py==2.3.2
 flask==2.3.3
 pymongo[srv]
