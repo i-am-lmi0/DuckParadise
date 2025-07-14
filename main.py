@@ -1,3 +1,4 @@
+sys.modules["audioop"] = None
 import os, asyncio, random, traceback
 from datetime import datetime, timedelta
 from pymongo import MongoClient
@@ -24,8 +25,6 @@ vanity_col = db["vanityroles"]
 sticky_col = db["stickynotes"]
 reaction_col = db["reactionroles"]
 shop_col = db["shop"]
-
-sys.modules["audioop"] = None
 
 print("Top of main.py reached")
 
