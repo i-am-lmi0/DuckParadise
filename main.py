@@ -9,12 +9,9 @@ import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
-from discord.ext.commands import Bot, when_mentioned_or
-from discord import app_commands
 from flask import Flask
 from motor.motor_asyncio import AsyncIOMotorClient
 import threading
-
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -37,7 +34,7 @@ fishes = [
     ("🐟 Fish", 200),
     ("🐠 Tropical Fish", 300),
     ("🦑 Squid", 400),
-    ("🐡 Pufferfish", 500)
+    ("🐡 Pufferfish", 500),
 ]
 
 intents = discord.Intents.all()
@@ -56,7 +53,7 @@ bot = commands.Bot(
 
 @bot.event
 async def on_guild_join(guild):
-    settings_col.update_one(
+    await settings_col.update_one(
         {"guild": str(guild.id)},
         {"$setOnInsert": {"prefix": "?"}},
         upsert=True
@@ -67,7 +64,7 @@ bot_locks = {}
 @bot.check
 async def global_lock_check(ctx):
     if bot_locks.get(str(ctx.guild.id)):
-        await ctx.send("🔒 Bot is locked — only `override` by theofficialtruck works")
+        await ctx.send("🔒 The bot is locked — only `override` by theofficialtruck works.")
         return False
     return True
 
@@ -76,9 +73,11 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return "Bot is running!"
-    
-if __name__ == '__main__':
+
+# Flask will run in a separate thread when the bot starts
+def run_flask():
     port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
 # 2. UTIL FUNCTIONS ===========================================
 def staff_only():
@@ -93,25 +92,27 @@ def staff_only():
 
 async def get_user(guild_id, user_id):
     key = f"{guild_id}-{user_id}"
-    u = economy_col.find_one({"_id": key})
+    u = await economy_col.find_one({"_id": key})
     if not u:
-        economy_col.insert_one({"_id": key, "guild": str(guild_id), "user": str(user_id), "wallet": 0, "bank": 0, "inventory": []})
-        return economy_col.find_one({"_id": key})
+        await economy_col.insert_one({"_id": key, "guild": str(guild_id), "user": str(user_id), "wallet": 0, "bank": 0, "inventory": []})
+        u = await economy_col.find_one({"_id": key})
     return u
 
-def convert_time(s): 
-    try: return int(s[:-1]) * {"s":1,"m":60,"h":3600,"d":86400}[s[-1]]
-    except: return None
-        
+def convert_time(s):
+    try:
+        return int(s[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[s[-1]]
+    except Exception:
+        return None
+
 async def resolve_member(ctx, arg):
     try:
         return await commands.MemberConverter().convert(ctx, arg)
-    except:
+    except Exception:
         try:
             return await ctx.guild.fetch_member(int(arg.strip("<@!>")))
-        except:
+        except Exception:
             return None
-            
+
 def check_target_permission(ctx, member: discord.Member):
     if member == ctx.author:
         return "❌ You can't perform this action on yourself."
@@ -120,21 +121,16 @@ def check_target_permission(ctx, member: discord.Member):
     if ctx.author.top_role <= member.top_role and ctx.author != ctx.guild.owner:
         return "❌ You can't perform this action on someone with an equal or higher role."
     return None
-    
+
 async def log_action(ctx, message, user_id=None, action_type=None):
     try:
         guild_id = str(ctx.guild.id)
-        log_channel_id = None
+        settings = await settings_col.find_one({"guild": guild_id})
+        log_channel_id = settings.get("log_channel") if settings else None
 
-        settings = settings_col.find_one({"guild": guild_id})
-        if settings:
-            log_channel_id = settings.get("log_channel")
-
-        # send log message to the discord channel
         if log_channel_id:
             log_channel = bot.get_channel(log_channel_id)
             if log_channel:
-                timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
                 embed = discord.Embed(
                     title="📋 Moderation Log",
                     description=message,
@@ -144,21 +140,16 @@ async def log_action(ctx, message, user_id=None, action_type=None):
                 embed.set_footer(text=f"By {ctx.author} • {ctx.author.id}")
                 await log_channel.send(embed=embed)
 
-        # save to mongo log database
         if user_id and action_type:
             log_doc = {
                 "guild": guild_id,
                 "user_id": str(user_id),
                 "action": action_type,
-                "by": {
-                    "name": str(ctx.author),
-                    "id": str(ctx.author.id)
-                },
+                "by": {"name": str(ctx.author), "id": str(ctx.author.id)},
                 "message": message,
                 "timestamp": datetime.utcnow().isoformat()
             }
-            logs_col.insert_one(log_doc)
-
+            await logs_col.insert_one(log_doc)
     except Exception as e:
         print(f"[log_action ERROR] {e}")
 
@@ -167,13 +158,10 @@ class CommandPages(View):
         super().__init__(timeout=None)
         self.embeds = embeds
         self.index = 0
-
         self.prev = Button(label="⏮️ Prev", style=ButtonStyle.secondary)
         self.next = Button(label="⏭️ Next", style=ButtonStyle.secondary)
-
         self.prev.callback = self.show_prev
         self.next.callback = self.show_next
-
         self.add_item(self.prev)
         self.add_item(self.next)
 
@@ -184,7 +172,7 @@ class CommandPages(View):
     async def show_next(self, interaction: Interaction):
         self.index = (self.index + 1) % len(self.embeds)
         await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
-        
+
 @tasks.loop(minutes=1)
 async def check_expired_mutes():
     now = datetime.utcnow()
@@ -203,7 +191,7 @@ async def check_expired_mutes():
                     await member.remove_roles(mute_role, reason="Mute expired")
                     await log_action(ctx=None, message=f"Auto-unmuted {member}", user_id=member.id, action_type="unmute")
 
-                mod_col.update_one(
+                await mod_col.update_one(
                     {"guild": doc["guild"], "user": doc["user"]},
                     {"$unset": {"muted_until": ""}}
                 )
@@ -214,7 +202,6 @@ async def check_expired_mutes():
 async def before_unmute_loop():
     await bot.wait_until_ready()
 
-# on_ready event
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck"))
@@ -529,13 +516,13 @@ async def fish(ctx):
     catch = random.choice(fishes)
     data["wallet"] += catch[1]
 
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {"wallet": data["wallet"]}}
     )
 
     await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
-    
+
 @bot.command(aliases=["steal"])
 async def rob(ctx, member: discord.Member):
     if member == ctx.author:
@@ -553,17 +540,17 @@ async def rob(ctx, member: discord.Member):
     robber["wallet"] += amount
     victim["wallet"] -= amount
 
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {"wallet": robber["wallet"]}}
     )
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{member.id}"},
         {"$set": {"wallet": victim["wallet"]}}
     )
 
     await ctx.send(f"💰 You robbed {member.display_name} and stole {amount} coins!")
-    
+
 @bot.command()
 async def use(ctx, item: str):
     item = item.lower()
@@ -572,16 +559,16 @@ async def use(ctx, item: str):
     if item not in inv:
         return await ctx.send(f"❌ You don't have a {item} in your inventory.")
 
+    # Feedback for using items
     if item == "fishing_rod":
-        await ctx.send("🎣 You use your fishing rod to fish faster!")
+        await ctx.send("🎣 You used your fishing rod to fish faster!")
     elif item == "laptop":
-        await ctx.send("💻 You use your laptop to earn extra coins next time you work!")
-    
+        await ctx.send("💻 You used your laptop. You'll earn extra coins next time you work!")
     else:
         await ctx.send(f"✅ You used a {item}, but nothing special happened.")
 
     inv.remove(item)
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {"inventory": inv}}
     )
