@@ -1,3 +1,4 @@
+import sys
 sys.modules["audioop"] = None
 import os, asyncio, random, traceback
 from datetime import datetime, timedelta
@@ -10,7 +11,7 @@ from discord import app_commands
 from flask import Flask
 from motor.motor_asyncio import AsyncIOMotorClient
 import threading
-import sys
+
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
