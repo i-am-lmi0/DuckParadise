@@ -43,11 +43,7 @@ async def get_prefix(bot, message):
     doc = await settings_col.find_one({"guild": str(message.guild.id)})
     return doc.get("prefix", "?") if doc else "?"
 
-bot = commands.Bot(
-    command_prefix=get_prefix,
-    intents=intents,
-    strip_after_prefix=True
-)
+bot = commands.Bot(command_prefix=get_prefix, intents=intents)
 
 @bot.event
 async def on_guild_join(guild):
