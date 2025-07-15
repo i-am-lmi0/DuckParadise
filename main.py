@@ -83,7 +83,7 @@ def run_flask():
 def staff_only():
     def predicate(ctx):
         guild_id = str(ctx.guild.id)
-        settings = settings_col.find_one({"guild": guild_id})
+        settings = await settings_col.find_one({"guild": guild_id})
         if not settings or "staff_role" not in settings:
             return False
         role = discord.utils.get(ctx.guild.roles, id=settings["staff_role"])
@@ -682,7 +682,7 @@ async def slowmode(ctx, seconds: int):
 @bot.command()
 @staff_only()
 async def setprefix(ctx, new: str):
-    settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"prefix": new}}, upsert=True)
+    await settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"prefix": new}}, upsert=True)
     await ctx.send(f"✅ Prefix updated to `{new}`.")
     await log_action(ctx, f"Prefix changed to {new}", action_type="setprefix")
 
@@ -690,7 +690,7 @@ async def setprefix(ctx, new: str):
 @bot.command()
 @staff_only()
 async def logchannel(ctx, channel: discord.TextChannel):
-    settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"log_channel": channel.id}}, upsert=True)
+    await settings_col.update_one({"guild": str(ctx.guild.id)}, {"$set": {"log_channel": channel.id}}, upsert=True)
     await ctx.send(f"✅ Log channel set to {channel.mention}.")
     await log_action(ctx, f"Log channel set to {channel}", action_type="logchannel")
     
