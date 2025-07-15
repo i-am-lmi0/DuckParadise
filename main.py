@@ -1,17 +1,15 @@
 import sys, types
-sys.modules["audioop"] = types.ModuleType("audioop")
+sys.modules["audioop"] = types.ModuleType("audioop")  # Prevent audioop errors
 print("audioop monkey-patched")
 
-import os, asyncio, random, traceback
+import os, asyncio, random, traceback, threading
 from datetime import datetime, timedelta
-from pymongo import MongoClient
+from motor.motor_asyncio import AsyncIOMotorClient
 import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
 from flask import Flask
-from motor.motor_asyncio import AsyncIOMotorClient
-import threading
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -34,7 +32,7 @@ fishes = [
     ("🐟 Fish", 200),
     ("🐠 Tropical Fish", 300),
     ("🦑 Squid", 400),
-    ("🐡 Pufferfish", 500),
+    ("🐡 Pufferfish", 500)
 ]
 
 intents = discord.Intents.all()
@@ -74,14 +72,13 @@ app = Flask(__name__)
 def home():
     return "Bot is running!"
 
-# Flask will run in a separate thread when the bot starts
 def run_flask():
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
 # 2. UTIL FUNCTIONS ===========================================
 def staff_only():
-    def predicate(ctx):
+    async def predicate(ctx):
         guild_id = str(ctx.guild.id)
         settings = await settings_col.find_one({"guild": guild_id})
         if not settings or "staff_role" not in settings:
@@ -100,7 +97,7 @@ async def get_user(guild_id, user_id):
 
 def convert_time(s):
     try:
-        return int(s[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[s[-1]]
+        return int(s[:-1]) * {"s":1,"m":60,"h":3600,"d":86400}[s[-1]]
     except Exception:
         return None
 
@@ -278,7 +275,7 @@ async def resetpromoters(ctx):
 
 @bot.event
 async def on_presence_update(before, after):
-    if not after.guild or after.bot:
+    if after.bot or not after.guild:
         return
 
     data = await vanity_col.find_one({"guild": str(after.guild.id)})
@@ -288,20 +285,29 @@ async def on_presence_update(before, after):
     kw = data["keyword"].lower()
     status = str(after.activity.name or "").lower()
     role = after.guild.get_role(data["role"])
-    log = after.guild.get_channel(data["log"])
+    log_ch = after.guild.get_channel(data["log"])
     has = role in after.roles
 
     if kw in status and not has:
         await after.add_roles(role, reason="vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
-        await log.send(embed=discord.Embed(
-            title="🎉 Granted!",
-            description=f"{after.mention} got {role.mention}",
-            color=discord.Color.green()
-        ))
+        # Send a styled embed similar to your image
+        await log_ch.send(embed=discord.Embed(
+            title="Vanity Added ✨",
+            description=f"{after.mention} has been awarded **{role.name}** for proudly displaying `{data['keyword']}` in their status!",
+            color=discord.Color.magenta(),
+            timestamp=datetime.utcnow()
+        ).set_thumbnail(url=after.display_avatar.url))
     elif kw not in status and has:
         await after.remove_roles(role, reason="vanity lost")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
+        await log_ch.send(embed=discord.Embed(
+            title="Vanity Removed",
+            description=f"{after.mention} has lost **{role.name}** for no longer displaying `{data['keyword']}`.",
+            color=discord.Color.light_gray(),
+            timestamp=datetime.utcnow()
+        ).set_thumbnail(url=after.display_avatar.url)
+
 @bot.command(aliases=["bal"])
 async def balance(ctx, member: discord.Member = None):
     member = member or ctx.author
@@ -411,7 +417,7 @@ async def shop(ctx):
 @bot.command()
 async def buy(ctx, item: str):
     item = item.lower()
-    store_item = db["shop"].find_one({"_id": item})
+    store_item = await shop_col.find_one({"_id": item})
     if not store_item:
         return await ctx.send("❌ Item not found.")
 
@@ -421,32 +427,25 @@ async def buy(ctx, item: str):
 
     data["wallet"] -= store_item["price"]
     data["inventory"].append(item)
-
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {
-            "wallet": data["wallet"],
-            "inventory": data["inventory"]
-        }}
+        {"$set": {"wallet": data["wallet"], "inventory": data["inventory"]}}
     )
     await ctx.send(f"✅ You bought a {item}!")
-    
+
 @bot.command(aliases=["inv"])
 async def inventory(ctx):
     data = await get_user(ctx.guild.id, ctx.author.id)
     inv = data.get("inventory", [])
-
     if not inv:
         return await ctx.send("🎒 Your inventory is empty.")
+    counts = {i: inv.count(i) for i in set(inv)}
+    desc = "\n".join(f"{name.capitalize()} x{count}" for name, count in counts.items())
+    await ctx.send(embed=discord.Embed(
+        title=f"{ctx.author.display_name}'s Inventory",
+        description=desc, color=discord.Color.purple()
+    ))
 
-    counts = {}
-    for item in inv:
-        counts[item] = counts.get(item, 0) + 1
-
-    description = "\n".join(f"{name.capitalize()} x{count}" for name, count in counts.items())
-    embed = discord.Embed(title=f"{ctx.author.display_name}'s Inventory", description=description, color=discord.Color.purple())
-    await ctx.send(embed=embed)
-    
 @bot.command(aliases=["pay"])
 async def give(ctx, member: discord.Member, amount: int):
     if member == ctx.author or amount <= 0:
@@ -454,18 +453,11 @@ async def give(ctx, member: discord.Member, amount: int):
 
     sender = await get_user(ctx.guild.id, ctx.author.id)
     receiver = await get_user(ctx.guild.id, member.id)
-
     if sender["wallet"] < amount:
         return await ctx.send("❌ You don't have enough coins.")
 
-    economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": sender["wallet"] - amount}}
-    )
-    economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{member.id}"},
-        {"$set": {"wallet": receiver["wallet"] + amount}}
-    )
+    await economy_col.update_one({"_id": f"{ctx.guild.id}-{ctx.author.id}"}, {"$set": {"wallet": sender["wallet"] - amount}})
+    await economy_col.update_one({"_id": f"{ctx.guild.id}-{member.id}"}, {"$set": {"wallet": receiver["wallet"] + amount}})
     await ctx.send(f"🤝 You gave {amount} coins to {member.mention}!")
     
 @bot.command(aliases=["lb"])
