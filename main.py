@@ -287,22 +287,29 @@ async def on_presence_update(before, after):
     if kw in status and not has:
         await after.add_roles(role, reason="vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
-        # Send a styled embed similar to your image
         await log_ch.send(embed=discord.Embed(
             title="Vanity Added ✨",
-            description=f"{after.mention} has been awarded **{role.name}** for proudly displaying `{data['keyword']}` in their status!",
+            description=(
+                f"{after.mention} has been awarded **{role.name}** "
+                f"for proudly displaying our vanity `gg/{kw}` in their status!\n"
+                "Keep shining with the vanity!"
+            ),
             color=discord.Color.magenta(),
             timestamp=datetime.utcnow()
         ).set_thumbnail(url=after.display_avatar.url))
+
     elif kw not in status and has:
         await after.remove_roles(role, reason="vanity lost")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
         await log_ch.send(embed=discord.Embed(
             title="Vanity Removed",
-            description=f"{after.mention} has lost **{role.name}** for no longer displaying `{data['keyword']}`.",
+            description=(
+                f"{after.mention} has lost **{role.name}** for no longer "
+                f"displaying our vanity `gg/{kw}`."
+            ),
             color=discord.Color.light_gray(),
             timestamp=datetime.utcnow()
-        ).set_thumbnail(url=after.display_avatar.url)
+        ).set_thumbnail(url=after.display_avatar.url))
 
 @bot.command(aliases=["bal"])
 async def balance(ctx, member: discord.Member = None):
