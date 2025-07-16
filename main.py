@@ -293,8 +293,12 @@ async def on_presence_update(before, after):
     if after.bot or not after.guild:
         return
 
-    # Only update vanity roles when the user is online or idle/dnd
+    # Ignore if user is offline or becoming offline
     if after.status == discord.Status.offline:
+        return
+
+    # Only trigger logic if their activity or status actually changed
+    if before.activity == after.activity and before.status == after.status:
         return
 
     data = await vanity_col.find_one({"guild": str(after.guild.id)})
