@@ -290,45 +290,51 @@ async def resetpromoters(ctx):
 
 @bot.event
 async def on_presence_update(before, after):
-    if after.bot or not after.guild or after.status == discord.Status.offline:
-        return  # Ignore offline users
+    if after.bot or not after.guild:
+        return
+
+    # Only update vanity roles when the user is online or idle/dnd
+    if after.status == discord.Status.offline:
+        return
 
     data = await vanity_col.find_one({"guild": str(after.guild.id)})
     if not data:
         return
 
-    kw = data["keyword"].lower()
-    status = (str(after.activity.name).lower() if after.activity else "")
+    keyword = data["keyword"].lower()
+    status = (after.activity.name.lower() if after.activity and after.activity.name else "")
     role = after.guild.get_role(data["role"])
     log_ch = after.guild.get_channel(data["log"])
-    has = role in after.roles
+    has_role = role in after.roles
 
-    if kw in status and not has:
-        await after.add_roles(role, reason="vanity match")
+    if keyword in status and not has_role:
+        await after.add_roles(role, reason="Vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
-        await log_ch.send(embed=discord.Embed(
-            title="Vanity Added ✨",
-            description=(
-                f"{after.mention} has been awarded **{role.name}** "
-                f"for proudly displaying our vanity `gg/{kw}` in their status!\n"
-                "Keep shining with the vanity!"
-            ),
-            color=discord.Color.magenta(),
-            timestamp=datetime.utcnow()
-        ).set_thumbnail(url=after.display_avatar.url))
+        if log_ch:
+            await log_ch.send(embed=discord.Embed(
+                title="Vanity Added ✨",
+                description=(
+                    f"{after.mention} has been awarded **{role.name}** "
+                    f"for proudly displaying our vanity `gg/{keyword}` in their status!\n"
+                    "Keep shining with the vanity!"
+                ),
+                color=discord.Color.magenta(),
+                timestamp=datetime.utcnow()
+            ).set_thumbnail(url=after.display_avatar.url))
 
-    elif kw not in status and has:
-        await after.remove_roles(role, reason="vanity lost")
+    elif keyword not in status and has_role:
+        await after.remove_roles(role, reason="Vanity removed")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
-        await log_ch.send(embed=discord.Embed(
-            title="Vanity Removed",
-            description=(
-                f"{after.mention} has lost **{role.name}** for no longer "
-                f"displaying our vanity `gg/{kw}`."
-            ),
-            color=discord.Color.light_gray(),
-            timestamp=datetime.utcnow()
-        ).set_thumbnail(url=after.display_avatar.url))
+        if log_ch:
+            await log_ch.send(embed=discord.Embed(
+                title="Vanity Removed",
+                description=(
+                    f"{after.mention} has lost **{role.name}** for no longer "
+                    f"displaying our vanity `gg/{keyword}`."
+                ),
+                color=discord.Color.light_gray(),
+                timestamp=datetime.utcnow()
+            ).set_thumbnail(url=after.display_avatar.url))
 
 @bot.command(aliases=["bal"])
 async def balance(ctx, member: discord.Member = None):
