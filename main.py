@@ -289,8 +289,8 @@ async def resetpromoters(ctx):
 
 @bot.event
 async def on_presence_update(before, after):
-    if after.bot or not after.guild:
-        return
+    if after.bot or not after.guild or after.status == discord.Status.offline:
+        return  # Ignore offline users
 
     data = await vanity_col.find_one({"guild": str(after.guild.id)})
     if not data:
@@ -303,7 +303,7 @@ async def on_presence_update(before, after):
     has = role in after.roles
 
     if kw in status and not has:
-        await after.add_roles(role, reason="Vanity match")
+        await after.add_roles(role, reason="vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
         await log_ch.send(embed=discord.Embed(
             title="Vanity Added ✨",
@@ -317,11 +317,14 @@ async def on_presence_update(before, after):
         ).set_thumbnail(url=after.display_avatar.url))
 
     elif kw not in status and has:
-        await after.remove_roles(role, reason="Vanity removed")
+        await after.remove_roles(role, reason="vanity lost")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
         await log_ch.send(embed=discord.Embed(
             title="Vanity Removed",
-            description=f"{after.mention} has lost **{role.name}** for no longer displaying our vanity `gg/{kw}`.",
+            description=(
+                f"{after.mention} has lost **{role.name}** for no longer "
+                f"displaying our vanity `gg/{kw}`."
+            ),
             color=discord.Color.light_gray(),
             timestamp=datetime.utcnow()
         ).set_thumbnail(url=after.display_avatar.url))
