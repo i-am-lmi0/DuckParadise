@@ -223,7 +223,7 @@ async def staffset(ctx, role: discord.Role):
     await ctx.send(f"✅ Staff role set to {role.mention}")
 
 @bot.command()
-@commands.guild_only()
+@staff_only()
 async def staffget(ctx):
     doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
     role = ctx.guild.get_role(doc.get("staff_role")) if doc else None
@@ -233,7 +233,7 @@ async def staffget(ctx):
         await ctx.send("⚠️ No staff role is currently set.")
 
 @bot.command()
-@commands.has_permissions(manage_roles=True)
+@staff_only()
 async def vanityroles(ctx, role: discord.Role, log_channel: discord.TextChannel, *, keyword: str):
     guild = str(ctx.guild.id)
     await vanity_col.update_one(
@@ -244,7 +244,7 @@ async def vanityroles(ctx, role: discord.Role, log_channel: discord.TextChannel,
     await ctx.send(f"✅ Vanity role set for '{keyword}' → {role.mention}")
 
 @bot.command()
-@commands.has_permissions(manage_roles=True)
+@staff_only()
 async def promoters(ctx):
     data = await vanity_col.find_one({"guild": str(ctx.guild.id)})
     users = data.get("users", []) if data else []
@@ -256,7 +256,7 @@ async def promoters(ctx):
     ))
 
 @bot.command()
-@commands.has_permissions(manage_roles=True)
+@staff_only()
 async def resetpromoters(ctx):
     guild = str(ctx.guild.id)
     data = await vanity_col.find_one({"guild": guild})
@@ -772,6 +772,18 @@ async def setwelcome(ctx, channel: discord.TextChannel):
         upsert=True
     )
     await ctx.send(f"✅ Welcome channel set to {channel.mention}.")
+    
+@bot.command()
+@staff_only()
+async def delwelcome(ctx):
+    result = await welcome_col.update_one(
+        {"guild": str(ctx.guild.id)},
+        {"$unset": {"welcome_channel": ""}}
+    )
+    if result.modified_count:
+        await ctx.send("✅ Welcome channel configuration has been removed.")
+    else:
+        await ctx.send("⚠️ No welcome channel was set.")
 
 @bot.command()
 @staff_only()
@@ -782,6 +794,18 @@ async def setboost(ctx, channel: discord.TextChannel):
         upsert=True
     )
     await ctx.send(f"✅ Boost channel set to {channel.mention}.")
+    
+@bot.command()
+@staff_only()
+async def delboost(ctx):
+    result = await boost_col.update_one(
+        {"guild": str(ctx.guild.id)},
+        {"$unset": {"boost_channel": ""}}
+    )
+    if result.modified_count:
+        await ctx.send("✅ Boost channel configuration has been removed.")
+    else:
+        await ctx.send("⚠️ No boost channel was set.")
 
 @bot.command()
 @staff_only()
