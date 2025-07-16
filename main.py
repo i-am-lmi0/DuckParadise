@@ -294,7 +294,8 @@ async def resetpromoters(ctx):
 
 @bot.event
 async def on_presence_update(before, after):
-    check_all_statuses.start()
+    if not check_all_statuses.is_running():
+        check_all_statuses.start()
     if after.bot or not after.guild:
         return
 
