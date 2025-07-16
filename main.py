@@ -24,6 +24,8 @@ vanity_col = db["vanityroles"]
 sticky_col = db["stickynotes"]
 reaction_col = db["reactionroles"]
 shop_col = db["shop"]
+welcome_col = db["welcome"]
+boost_col = db["boost"]
 
 print("Top of main.py reached")
 
@@ -234,31 +236,42 @@ async def staffget(ctx):
 @commands.has_permissions(manage_roles=True)
 async def vanityroles(ctx, role: discord.Role, log_channel: discord.TextChannel, *, keyword: str):
     guild = str(ctx.guild.id)
-    vanity_col.update_one({"guild": guild}, {"$set": {"role": role.id, "log": log_channel.id, "keyword": keyword, "users": []}}, upsert=True)
-    await ctx.send(f"✅ set vanity role for '{keyword}' → {role.mention}")
+    await vanity_col.update_one(
+        {"guild": guild},
+        {"$set": {"role": role.id, "log": log_channel.id, "keyword": keyword, "users": []}},
+        upsert=True
+    )
+    await ctx.send(f"✅ Vanity role set for '{keyword}' → {role.mention}")
 
 @bot.command()
 @commands.has_permissions(manage_roles=True)
 async def promoters(ctx):
-    data = vanity_col.find_one({"guild": str(ctx.guild.id)})
+    data = await vanity_col.find_one({"guild": str(ctx.guild.id)})
     users = data.get("users", []) if data else []
     mentions = [ctx.guild.get_member(uid).mention for uid in users if ctx.guild.get_member(uid)]
-    await ctx.send(embed=discord.Embed(title="📢 current promoters", description="\n".join(mentions) or "none", color=discord.Color.blue()))
+    await ctx.send(embed=discord.Embed(
+        title="📢 Current Promoters",
+        description="\n".join(mentions) or "None",
+        color=discord.Color.blue()
+    ))
 
 @bot.command()
 @commands.has_permissions(manage_roles=True)
 async def resetpromoters(ctx):
     guild = str(ctx.guild.id)
-    data = vanity_col.find_one({"guild": guild})
+    data = await vanity_col.find_one({"guild": guild})
     if not data:
-        return await ctx.send("❌ no vanity config set")
-    await ctx.send("⚠️ confirm by typing exactly:\n`I confirm I want to reset all the promoters.`")
+        return await ctx.send("❌ No vanity config set.")
+
+    await ctx.send("⚠️ Type exactly:\n`I confirm I want to reset all the promoters.`")
     try:
-        msg = await bot.wait_for("message", check=lambda m: m.author==ctx.author and m.channel==ctx.channel, timeout=30)
+        msg = await bot.wait_for("message", check=lambda m: m.author == ctx.author and m.channel == ctx.channel, timeout=30)
     except asyncio.TimeoutError:
-        return await ctx.send("❌ timeout — cancelled")
+        return await ctx.send("❌ Timeout — cancelled.")
+    
     if msg.content.strip() != "I confirm I want to reset all the promoters.":
-        return await ctx.send("❌ confirmation failed — cancelled")
+        return await ctx.send("❌ Confirmation failed — cancelled.")
+
     r = ctx.guild.get_role(data["role"])
     removed = 0
     for uid in data["users"]:
@@ -266,8 +279,13 @@ async def resetpromoters(ctx):
         if m and r in m.roles:
             await m.remove_roles(r, reason="reset promoters")
             removed += 1
-    vanity_col.update_one({"guild": guild}, {"$set": {"users": []}})
-    await ctx.send(embed=discord.Embed(title="🔁 promoters reset", description=f"{removed} removed, list cleared", color=discord.Color.red()))
+
+    await vanity_col.update_one({"guild": guild}, {"$set": {"users": []}})
+    await ctx.send(embed=discord.Embed(
+        title="🔁 Promoters Reset",
+        description=f"{removed} users removed. List cleared.",
+        color=discord.Color.red()
+    ))
 
 @bot.event
 async def on_presence_update(before, after):
@@ -285,7 +303,7 @@ async def on_presence_update(before, after):
     has = role in after.roles
 
     if kw in status and not has:
-        await after.add_roles(role, reason="vanity match")
+        await after.add_roles(role, reason="Vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
         await log_ch.send(embed=discord.Embed(
             title="Vanity Added ✨",
@@ -299,14 +317,11 @@ async def on_presence_update(before, after):
         ).set_thumbnail(url=after.display_avatar.url))
 
     elif kw not in status and has:
-        await after.remove_roles(role, reason="vanity lost")
+        await after.remove_roles(role, reason="Vanity removed")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
         await log_ch.send(embed=discord.Embed(
             title="Vanity Removed",
-            description=(
-                f"{after.mention} has lost **{role.name}** for no longer "
-                f"displaying our vanity `gg/{kw}`."
-            ),
+            description=f"{after.mention} has lost **{role.name}** for no longer displaying our vanity `gg/{kw}`.",
             color=discord.Color.light_gray(),
             timestamp=datetime.utcnow()
         ).set_thumbnail(url=after.display_avatar.url))
@@ -747,7 +762,114 @@ async def unstickynote(ctx):
         await ctx.send("✅ Sticky note removed.")
     else:
         await ctx.send("⚠️ No sticky note set for this channel.")
-        
+
+@bot.command()
+@staff_only()
+async def setwelcome(ctx, channel: discord.TextChannel):
+    await welcome_col.update_one(
+        {"guild": str(ctx.guild.id)},
+        {"$set": {"welcome_channel": channel.id}},
+        upsert=True
+    )
+    await ctx.send(f"✅ Welcome channel set to {channel.mention}.")
+
+@bot.command()
+@staff_only()
+async def setboost(ctx, channel: discord.TextChannel):
+    await boost_col.update_one(
+        {"guild": str(ctx.guild.id)},
+        {"$set": {"boost_channel": channel.id}},
+        upsert=True
+    )
+    await ctx.send(f"✅ Boost channel set to {channel.mention}.")
+
+@bot.command()
+@staff_only()
+async def testwelcome(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    guild = ctx.guild
+    welcome_doc = await welcome_col.find_one({"guild": str(guild.id)})
+    welcome_ch = guild.get_channel(welcome_doc.get("welcome_channel")) if welcome_doc else None
+
+    if not welcome_ch:
+        return await ctx.send("❌ No welcome channel set. Use `?setwelcome #channel`.")
+
+    embed = discord.Embed(
+        title=f"Welcome to Duck Paradise 🦆 quack!",
+        description=(
+            "⭐ **Quack loud in** <#1370374734037909576> and enjoy the pond! ✨\n"
+            "⭐ **Check** <#1370374725108236379> to equip tag! ✨\n"
+            "⭐ **Boost our pond** and get exclusive <@&1370367716892082236> role! ✨"
+        ),
+        color=discord.Color.from_str("#2f3136")
+    )
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.set_image(url="https://cdn.discordapp.com/attachments/1370374741579534408/1386456926300409939/duckduckgo-welcome.gif")
+    embed.set_footer(text=f"You are our {guild.member_count}th member!")
+
+    await welcome_ch.send(f"welcome, {member.mention} 🐥!", embed=embed)
+    await ctx.send("✅ Test welcome message sent.")
+
+@bot.command()
+@staff_only()
+async def testboost(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    guild = ctx.guild
+    boost_doc = await boost_col.find_one({"guild": str(guild.id)})
+    boost_ch = guild.get_channel(boost_doc.get("boost_channel")) if boost_doc else None
+
+    if not boost_ch:
+        return await ctx.send("❌ No boost channel set. Use `?setboost #channel`.")
+
+    boost_embed = discord.Embed(
+        title="🚀 Boost Alert!",
+        description=f"{member.mention} just boosted the pond! 🌟\nThank you for your support!",
+        color=discord.Color.fuchsia(),
+        timestamp=datetime.utcnow()
+    )
+    boost_embed.set_thumbnail(url=member.display_avatar.url)
+
+    await boost_ch.send(embed=boost_embed)
+    await ctx.send("✅ Test boost message sent.")
+
+@bot.event
+async def on_member_join(member):
+    guild = member.guild
+
+    # WELCOME ========================
+    welcome_doc = await welcome_col.find_one({"guild": str(guild.id)})
+    welcome_ch = guild.get_channel(welcome_doc.get("welcome_channel")) if welcome_doc else None
+
+    if welcome_ch:
+        embed = discord.Embed(
+            title=f"Welcome to Duck Paradise 🦆 quack!",
+            description=(
+                "⭐ **Quack loud in** <#1370374734037909576> and enjoy the pond! ✨\n"
+                "⭐ **Check** <#1370374725108236379> to equip tag! ✨\n"
+                "⭐ **Boost our pond** and get exclusive <@&1370367716892082236> role! ✨"
+            ),
+            color=discord.Color.from_str("#2f3136")
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_image(url="https://cdn.discordapp.com/attachments/1370374741579534408/1386456926300409939/duckduckgo-welcome.gif")
+        embed.set_footer(text=f"You are our {guild.member_count}th member!")
+        await welcome_ch.send(f"welcome, {member.mention} 🐥!", embed=embed)
+
+    # BOOST ==========================
+    if member.premium_since:
+        boost_doc = await boost_col.find_one({"guild": str(guild.id)})
+        boost_ch = guild.get_channel(boost_doc.get("boost_channel")) if boost_doc else None
+
+        if boost_ch:
+            boost_embed = discord.Embed(
+                title="🚀 Boost Alert!",
+                description=f"{member.mention} just boosted the pond! 🌟\nThank you for your support!",
+                color=discord.Color.fuchsia(),
+                timestamp=datetime.utcnow()
+            )
+            boost_embed.set_thumbnail(url=member.display_avatar.url)
+            await boost_ch.send(embed=boost_embed)
+
 @bot.command()
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
