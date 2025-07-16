@@ -11,6 +11,7 @@ from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
 from flask import Flask
 import aiohttp
+from discord.ext.commands import cooldown, BucketType
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -30,13 +31,15 @@ boost_col = db["boost"]
 
 print("Top of main.py reached")
 
-fishes = [
+fishes = [ # for economy game
     ("🦐 Shrimp", 100),
     ("🐟 Fish", 200),
     ("🐠 Tropical Fish", 300),
     ("🦑 Squid", 400),
     ("🐡 Pufferfish", 500)
 ]
+
+ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
 
 intents = discord.Intents.all()
 
@@ -302,37 +305,36 @@ async def on_member_update(before: discord.Member, after: discord.Member):
     log_ch = after.guild.get_channel(data["log"])
     has_role = role in after.roles
 
-    # Extract old and new custom statuses (might be None)
-    before_status = next((act.name.lower() for act in before.activities if isinstance(act, discord.CustomActivity) and act.name), "")
-    after_status = next((act.name.lower() for act in after.activities if isinstance(act, discord.CustomActivity) and act.name), "")
+    # Get custom status
+    def get_custom_status(member):
+        for activity in member.activities:
+            if isinstance(activity, discord.CustomActivity) and activity.name:
+                return activity.name.lower()
+        return ""
 
-    # Assign role when they start displaying the keyword
+    before_status = get_custom_status(before)
+    after_status = get_custom_status(after)
+
+    # Added vanity keyword
     if keyword in after_status and not has_role:
         await after.add_roles(role, reason="Vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
         if log_ch:
             await log_ch.send(embed=discord.Embed(
                 title="Vanity Added ✨",
-                description=(
-                    f"{after.mention} has been awarded **{role.name}** "
-                    f"for proudly displaying our vanity `gg/{keyword}` in their status!\n"
-                    "Keep shining with the vanity!"
-                ),
+                description=f"{after.mention} has been awarded **{role.name}** for using `{keyword}` in status!",
                 color=discord.Color.magenta(),
                 timestamp=datetime.utcnow()
             ).set_thumbnail(url=after.display_avatar.url))
 
-    # Remove only when they stop displaying and are still online
+    # Removed vanity keyword
     elif keyword not in after_status and has_role:
         await after.remove_roles(role, reason="Vanity removed")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
         if log_ch:
             await log_ch.send(embed=discord.Embed(
                 title="Vanity Removed",
-                description=(
-                    f"{after.mention} has lost **{role.name}** for no longer "
-                    f"displaying our vanity `gg/{keyword}`."
-                ),
+                description=f"{after.mention} lost **{role.name}** for removing `{keyword}` from status.",
                 color=discord.Color.light_gray(),
                 timestamp=datetime.utcnow()
             ).set_thumbnail(url=after.display_avatar.url))
@@ -505,12 +507,12 @@ async def leaderboard(ctx):
         embed.add_field(name=f"#{i} {name}", value=f"🪙 {total} coins", inline=False)
     await ctx.send(embed=embed)
     
-@bot.command()
-async def gamble(ctx, amount: int):
+@bot.command(aliases=["cf"])
+async def coinflip(ctx, amount: int):
     data = await get_user(ctx.guild.id, ctx.author.id)
 
     if amount <= 0 or amount > data["wallet"]:
-        return await ctx.send("❌ Invalid amount to gamble.")
+        return await ctx.send("❌ Invalid amount to coin flip.")
 
     # add effects/boosts here
     win_chance = 0.5
@@ -523,9 +525,9 @@ async def gamble(ctx, amount: int):
     )
 
     if won:
-        await ctx.send(f"🎉 You won {amount} coins from gambling!")
+        await ctx.send(f"🎉 You won {amount} coins from flipping a coin!")
     else:
-        await ctx.send(f"💸 You lost {amount} coins from gambling.")
+        await ctx.send(f"💸 You lost {amount} coins from flipping a coin.")
 
 @bot.command()
 async def fish(ctx):
@@ -905,9 +907,18 @@ async def on_member_join(member):
             boost_embed.set_thumbnail(url=member.display_avatar.url)
             await boost_ch.send(embed=boost_embed)
             
+from discord.ext.commands import cooldown, BucketType
+import aiohttp
+
+ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741]
+
 @bot.command()
+@cooldown(1, 5, BucketType.user)
 async def duck(ctx):
-    """Send a random duck image."""
+    """Send a random duck image (only allowed in specific channels)."""
+    if ctx.channel.id not in ALLOWED_DUCK_CHANNELS:
+        return await ctx.send("❌ This command can only be used in approved duck channels.")
+
     async with aiohttp.ClientSession() as session:
         async with session.get("https://random-d.uk/api/random") as resp:
             if resp.status != 200:
@@ -916,11 +927,61 @@ async def duck(ctx):
             url = data.get("url")
             if not url:
                 return await ctx.send("❌ Duck image not found, sorry!")
+
     embed = discord.Embed(
         title="🦆 Quack!",
         color=discord.Color.blue()
     )
     embed.set_image(url=url)
+    await ctx.send(embed=embed)
+    
+@bot.command()
+@cooldown(1, 5, BucketType.user)
+async def pun(ctx):
+    """Send a random duck pun."""
+    puns = [
+        "Why did the duck go to therapy? It had a fowl attitude.",
+        "Stop quacking jokes, you're cracking me up!",
+        "I'm absolutely quackers for you!",
+        "No more bills, please—I'm not a real duck!",
+        "You're egg-ceptional!",
+        "You really ruffled my feathers (in a good way).",
+        "Duck off! (Just kidding.)",
+        "Have you met my down-to-earth friend?",
+        "This conversation is going swimmingly.",
+        "That joke really waddled its way into my heart.",
+        "I feel down... must be molting season.",
+        "Quack me up one more time and I'm out!",
+        "Don't worry, be ducky!",
+        "I'm in a fowl mood today.",
+        "It's just water off a duck's back.",
+        "You feather believe it!",
+        "Don’t get your feathers ruffled.",
+        "I can't wing it anymore!",
+        "What the duck is going on here?",
+        "I beak to differ.",
+        "Poultry in motion!",
+        "Let’s get quackin’!",
+        "Duck yeah!",
+        "I’m not just any bird—I’m a ducking legend.",
+        "No egrets, just ducks.",
+        "Fowl play is not tolerated here.",
+        "I'm on a feathered roll.",
+        "I bill-ieve in you!",
+        "That’s un-beak-lievable!",
+        "Stay calm and quack on.",
+        "I’m all quacked up.",
+        "My life’s gone a bit south—like a migrating duck.",
+        "You make my heart flap.",
+        "Keep it ducky!",
+        "I’m beaking news: ducks rule!"
+    ]
+
+    embed = discord.Embed(
+        title="🦆 Duck Pun!",
+        description=random.choice(puns),
+        color=discord.Color.gold()
+    )
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -930,62 +991,77 @@ async def serverinfo(ctx):
 @bot.command()
 async def cmds(ctx):
     doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
+    prefix = doc.get("prefix", "?") if doc else "?"
     staff_role = ctx.guild.get_role(doc.get("staff_role")) if doc else None
     is_staff = staff_role in ctx.author.roles if staff_role else False
 
+    def format_field(name, value):
+        return (name.replace("?", prefix), value)
+
     # GENERAL COMMANDS
     general = discord.Embed(title="💬 General Commands", color=discord.Color.blurple())
-    general.add_field(name="?serverinfo", value="View server information", inline=False)
-    general.add_field(name="?cmds", value="Show this help menu", inline=False)
-    general.add_field(name="?afk [reason]", value="Set your AFK status", inline=False)
-    general.add_field(name="?duck", value="Random picture of a duck", inline=False)
+    for name, value in [
+        ("?serverinfo", "View server information"),
+        ("?cmds", "Show this help menu"),
+        ("?afk [reason]", "Set your AFK status"),
+        ("?duck", "Random picture of a duck"),
+        ("?pun", "Random duck puns")
+    ]:
+        general.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
     # ECONOMY COMMANDS
     economy = discord.Embed(title="💰 Economy Commands", color=discord.Color.green())
-    economy.add_field(name="?balance / ?bal", value="Check your balance", inline=False)
-    economy.add_field(name="?daily", value="Claim your daily reward", inline=False)
-    economy.add_field(name="?work", value="Work to earn coins", inline=False)
-    economy.add_field(name="?beg", value="Beg for coins", inline=False)
-    economy.add_field(name="?deposit / ?dep <amount>", value="Deposit to bank", inline=False)
-    economy.add_field(name="?withdraw / ?with <amount>", value="Withdraw from bank", inline=False)
-    economy.add_field(name="?shop", value="View the shop", inline=False)
-    economy.add_field(name="?buy <item>", value="Buy an item from the shop", inline=False)
-    economy.add_field(name="?use <item>", value="Use an item from your inventory", inline=False)
-    economy.add_field(name="?inventory / ?inv", value="View your items", inline=False)
-    economy.add_field(name="?give / ?pay @user <amount>", value="Give coins to another user", inline=False)
-    economy.add_field(name="?leaderboard / ?lb", value="View the top users", inline=False)
-    economy.add_field(name="?gamble <amount>", value="Gamble your coins", inline=False)
-    economy.add_field(name="?fish", value="Go fishing to earn coins", inline=False)
-    economy.add_field(name="?rob / ?steal @user", value="Attempt to rob another user", inline=False)
+    for name, value in [
+        ("?balance / ?bal", "Check your balance"),
+        ("?daily", "Claim your daily reward"),
+        ("?work", "Work to earn coins"),
+        ("?beg", "Beg for coins"),
+        ("?deposit / ?dep <amount>", "Deposit to bank"),
+        ("?withdraw / ?with <amount>", "Withdraw from bank"),
+        ("?shop", "View the shop"),
+        ("?buy <item>", "Buy an item from the shop"),
+        ("?use <item>", "Use an item from your inventory"),
+        ("?inventory / ?inv", "View your items"),
+        ("?give / ?pay @user <amount>", "Give coins to another user"),
+        ("?leaderboard / ?lb", "View the top users"),
+        ("?coinflip / ?cf <amount>", "Coin flip for coins"),
+        ("?fish", "Go fishing to earn coins"),
+        ("?rob / ?steal @user", "Attempt to rob another user")
+    ]:
+        economy.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
     pages = [general, economy]
 
     if is_staff:
         staff = discord.Embed(title="🛠️ Staff Commands", color=discord.Color.dark_red())
-        staff.add_field(name="?kick @user [reason]", value="Kick a member", inline=False)
-        staff.add_field(name="?ban @user [reason]", value="Ban a member", inline=False)
-        staff.add_field(name="?unban <user_id>", value="Unban a user", inline=False)
-        staff.add_field(name="?mute @user <time> [reason]", value="Mute a user temporarily", inline=False)
-        staff.add_field(name="?unmute @user", value="Unmute a user", inline=False)
-        staff.add_field(name="?purge <count> [@user]", value="Bulk delete messages", inline=False)
-        staff.add_field(name="?warn @user [reason]", value="Warn a user", inline=False)
-        staff.add_field(name="?clearwarns @user", value="Clear all warnings", inline=False)
-        staff.add_field(name="?slowmode <seconds>", value="Set slowmode for this channel", inline=False)
-        staff.add_field(name="?setprefix <prefix>", value="Change the bot prefix", inline=False)
-        staff.add_field(name="?logchannel #channel", value="Set the moderation log channel", inline=False)
-        staff.add_field(name="?reactionrole <msg_id> <emoji> @role", value="Set up a reaction role", inline=False)
-        staff.add_field(name="?stickynote", value="Set a sticky note in this channel", inline=False)
-        staff.add_field(name="?unstickynote", value="Remove the sticky note", inline=False)
-        staff.add_field(name="?setwelcome #channel", value="Set the welcome channel", inline=False)
-        staff.add_field(name="?setboost #channel", value="Set the boost message channel", inline=False)
-        staff.add_field(name="?testwelcome [@user]", value="Send a test welcome message", inline=False)
-        staff.add_field(name="?testboost [@user]", value="Send a test boost message", inline=False)
-        staff.add_field(name="?staffset @role", value="Set the staff role", inline=False)
-        staff.add_field(name="?staffget", value="Show the configured staff role", inline=False)
-        staff.add_field(name="?userinfo [@user]", value="View detailed user info", inline=False)
-        staff.add_field(name="?vanityroles @role #logchannel <status>", value="Track users with keyword in status", inline=False)
-        staff.add_field(name="?promoters", value="View users with the vanity role", inline=False)
-        staff.add_field(name="?resetpromoters", value="Clear all users from the vanity role", inline=False)
+        for name, value in [
+            ("?kick @user [reason]", "Kick a member"),
+            ("?ban @user [reason]", "Ban a member"),
+            ("?unban <user_id>", "Unban a user"),
+            ("?mute @user <time> [reason]", "Mute a user temporarily"),
+            ("?unmute @user", "Unmute a user"),
+            ("?purge <count> [@user]", "Bulk delete messages"),
+            ("?warn @user [reason]", "Warn a user"),
+            ("?clearwarns @user", "Clear all warnings"),
+            ("?slowmode <seconds>", "Set slowmode for this channel"),
+            ("?setprefix <prefix>", "Change the bot prefix"),
+            ("?logchannel #channel", "Set the moderation log channel"),
+            ("?reactionrole <msg_id> <emoji> @role", "Set up a reaction role"),
+            ("?stickynote", "Set a sticky note in this channel"),
+            ("?unstickynote", "Remove the sticky note"),
+            ("?setwelcome #channel", "Set the welcome channel"),
+            ("?setboost #channel", "Set the boost message channel"),
+            ("?testwelcome [@user]", "Send a test welcome message"),
+            ("?testboost [@user]", "Send a test boost message"),
+            ("?staffset @role", "Set the staff role"),
+            ("?staffget", "Show the configured staff role"),
+            ("?userinfo [@user]", "View detailed user info"),
+            ("?vanityroles @role #logchannel <status>", "Track users with keyword in status"),
+            ("?promoters", "View users with the vanity role"),
+            ("?resetpromoters", "Clear all users from the vanity role")
+        ]:
+            staff.add_field(name=format_field(name, value)[0], value=value, inline=False)
+
         pages.append(staff)
 
     view = CommandPages(pages)
