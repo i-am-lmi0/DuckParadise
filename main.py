@@ -10,6 +10,7 @@ from discord.ext import commands, tasks
 from discord.ui import View, Button
 from discord import ButtonStyle, Interaction
 from flask import Flask
+import aiohttp
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -896,6 +897,24 @@ async def on_member_join(member):
             )
             boost_embed.set_thumbnail(url=member.display_avatar.url)
             await boost_ch.send(embed=boost_embed)
+            
+@bot.command()
+async def duck(ctx):
+    """Send a random duck image."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://random-d.uk/api/random") as resp:
+            if resp.status != 200:
+                return await ctx.send("❌ Could not get a duck right now, try again later!")
+            data = await resp.json()
+            url = data.get("url")
+            if not url:
+                return await ctx.send("❌ Duck image not found, sorry!")
+    embed = discord.Embed(
+        title="🦆 Quack!",
+        color=discord.Color.blue()
+    )
+    embed.set_image(url=url)
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def serverinfo(ctx):
@@ -912,6 +931,7 @@ async def cmds(ctx):
     general.add_field(name="?serverinfo", value="View server information", inline=False)
     general.add_field(name="?cmds", value="Show this help menu", inline=False)
     general.add_field(name="?afk [reason]", value="Set your AFK status", inline=False)
+    general.add_field(name="?duck", value="Random picture of a duck", inline=False)
 
     # ECONOMY COMMANDS
     economy = discord.Embed(title="💰 Economy Commands", color=discord.Color.green())
