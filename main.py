@@ -292,8 +292,12 @@ async def resetpromoters(ctx):
     ))
 
 @bot.event
-async def on_member_update(before: discord.Member, after: discord.Member):
-    if after.bot:
+async def on_presence_update(before, after):
+    if after.bot or not after.guild:
+        return
+
+    # Only process when user is online (not offline)
+    if after.status == discord.Status.offline:
         return
 
     data = await vanity_col.find_one({"guild": str(after.guild.id)})
@@ -301,40 +305,39 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         return
 
     keyword = data["keyword"].lower()
+    # Safely get activity
+    status = before.activity.name.lower() if before.activity and before.activity.name else ""
+    new_status = after.activity.name.lower() if after.activity and after.activity.name else ""
     role = after.guild.get_role(data["role"])
     log_ch = after.guild.get_channel(data["log"])
     has_role = role in after.roles
 
-    # Get custom status
-    def get_custom_status(member):
-        for activity in member.activities:
-            if isinstance(activity, discord.CustomActivity) and activity.name:
-                return activity.name.lower()
-        return ""
-
-    before_status = get_custom_status(before)
-    after_status = get_custom_status(after)
-
-    # Added vanity keyword
-    if keyword in after_status and not has_role:
-        await after.add_roles(role, reason="Vanity match")
+    # Give role when keyword newly appears in status
+    if keyword not in status and keyword in new_status and not has_role:
+        await after.add_roles(role, reason="vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
         if log_ch:
             await log_ch.send(embed=discord.Embed(
                 title="Vanity Added ✨",
-                description=f"{after.mention} has been awarded **{role.name}** for using `{keyword}` in status!",
+                description=(
+                    f"{after.mention} has been awarded **{role.name}** "
+                    f"for proudly displaying our vanity `gg/{keyword}` in their status!"
+                ),
                 color=discord.Color.magenta(),
                 timestamp=datetime.utcnow()
             ).set_thumbnail(url=after.display_avatar.url))
 
-    # Removed vanity keyword
-    elif keyword not in after_status and has_role:
-        await after.remove_roles(role, reason="Vanity removed")
+    # Remove role when keyword is removed from status (while online)
+    elif keyword in status and keyword not in new_status and has_role:
+        await after.remove_roles(role, reason="vanity lost")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
         if log_ch:
             await log_ch.send(embed=discord.Embed(
                 title="Vanity Removed",
-                description=f"{after.mention} lost **{role.name}** for removing `{keyword}` from status.",
+                description=(
+                    f"{after.mention} has lost **{role.name}** for no longer "
+                    f"displaying our vanity `gg/{keyword}`."
+                ),
                 color=discord.Color.light_gray(),
                 timestamp=datetime.utcnow()
             ).set_thumbnail(url=after.display_avatar.url))
