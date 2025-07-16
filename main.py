@@ -12,6 +12,7 @@ from discord import ButtonStyle, Interaction
 from flask import Flask
 import aiohttp
 from discord.ext.commands import cooldown, BucketType
+from pytz import UTC
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -86,7 +87,7 @@ def staff_only():
         if not settings or "staff_role" not in settings:
             return False
         role = discord.utils.get(ctx.guild.roles, id=settings["staff_role"])
-        return role in ctx.author.roles if role else False
+        return bool(role and role in ctx.author.roles)
     return commands.check(predicate)
 
 async def get_user(guild_id, user_id):
@@ -293,6 +294,7 @@ async def resetpromoters(ctx):
 
 @bot.event
 async def on_presence_update(before, after):
+    check_all_statuses.start()
     if after.bot or not after.guild:
         return
 
@@ -341,6 +343,55 @@ async def on_presence_update(before, after):
                 color=discord.Color.light_gray(),
                 timestamp=datetime.utcnow()
             ).set_thumbnail(url=after.display_avatar.url))
+            
+@tasks.loop(minutes=3)
+async def check_all_statuses():
+    for guild in bot.guilds:
+        data = await vanity_col.find_one({"guild": str(guild.id)})
+        if not data:
+            continue
+
+        keyword = data["keyword"].lower()
+        role = guild.get_role(data["role"])
+        log_ch = guild.get_channel(data["log"])
+
+        if not role:
+            continue
+
+        for member in guild.members:
+            if member.bot or member.status == discord.Status.offline:
+                continue
+
+            status = (member.activity.name.lower() if member.activity and member.activity.name else "")
+            has_role = role in member.roles
+
+            if keyword in status and not has_role:
+                await member.add_roles(role, reason="Vanity match (auto-check)")
+                await vanity_col.update_one({"guild": str(guild.id)}, {"$addToSet": {"users": member.id}})
+                if log_ch:
+                    await log_ch.send(embed=discord.Embed(
+                        title="Vanity Added ✨",
+                        description=(
+                            f"{member.mention} has been awarded **{role.name}**\n"
+                            f"For displaying `{keyword}` in their status!"
+                        ),
+                        color=discord.Color.magenta(),
+                        timestamp=datetime.now(UTC)
+                    ).set_thumbnail(url=member.display_avatar.url))
+
+            elif keyword not in status and has_role:
+                await member.remove_roles(role, reason="Vanity removed (auto-check)")
+                await vanity_col.update_one({"guild": str(guild.id)}, {"$pull": {"users": member.id}})
+                if log_ch:
+                    await log_ch.send(embed=discord.Embed(
+                        title="Vanity Removed",
+                        description=(
+                            f"{member.mention} lost **{role.name}** for no longer "
+                            f"displaying `{keyword}` in their status."
+                        ),
+                        color=discord.Color.light_gray(),
+                        timestamp=datetime.now(UTC)
+                    ).set_thumbnail(url=member.display_avatar.url))
 
 @bot.command(aliases=["bal"])
 async def balance(ctx, member: discord.Member = None):
