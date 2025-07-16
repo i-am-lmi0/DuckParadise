@@ -289,16 +289,8 @@ async def resetpromoters(ctx):
     ))
 
 @bot.event
-async def on_presence_update(before, after):
-    if after.bot or not after.guild:
-        return
-
-    # Ignore if user is offline or becoming offline
-    if after.status == discord.Status.offline:
-        return
-
-    # Only trigger logic if their activity or status actually changed
-    if before.activity == after.activity and before.status == after.status:
+async def on_member_update(before: discord.Member, after: discord.Member):
+    if after.bot:
         return
 
     data = await vanity_col.find_one({"guild": str(after.guild.id)})
@@ -306,12 +298,16 @@ async def on_presence_update(before, after):
         return
 
     keyword = data["keyword"].lower()
-    status = (after.activity.name.lower() if after.activity and after.activity.name else "")
     role = after.guild.get_role(data["role"])
     log_ch = after.guild.get_channel(data["log"])
     has_role = role in after.roles
 
-    if keyword in status and not has_role:
+    # Extract old and new custom statuses (might be None)
+    before_status = next((act.name.lower() for act in before.activities if isinstance(act, discord.CustomActivity) and act.name), "")
+    after_status = next((act.name.lower() for act in after.activities if isinstance(act, discord.CustomActivity) and act.name), "")
+
+    # Assign role when they start displaying the keyword
+    if keyword in after_status and not has_role:
         await after.add_roles(role, reason="Vanity match")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$addToSet": {"users": after.id}})
         if log_ch:
@@ -326,7 +322,8 @@ async def on_presence_update(before, after):
                 timestamp=datetime.utcnow()
             ).set_thumbnail(url=after.display_avatar.url))
 
-    elif keyword not in status and has_role:
+    # Remove only when they stop displaying and are still online
+    elif keyword not in after_status and has_role:
         await after.remove_roles(role, reason="Vanity removed")
         await vanity_col.update_one({"guild": str(after.guild.id)}, {"$pull": {"users": after.id}})
         if log_ch:
