@@ -298,7 +298,7 @@ async def on_presence_update(before, after):
         return
 
     kw = data["keyword"].lower()
-    status = str(after.activity.name or "").lower()
+    status = (str(after.activity.name).lower() if after.activity else "")
     role = after.guild.get_role(data["role"])
     log_ch = after.guild.get_channel(data["log"])
     has = role in after.roles
