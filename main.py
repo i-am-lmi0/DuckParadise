@@ -13,6 +13,8 @@ from flask import Flask
 import aiohttp
 from discord.ext.commands import cooldown, BucketType
 from pytz import UTC
+from collections import defaultdict
+import time
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -807,12 +809,27 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
 @staff_only()
 async def stickynote(ctx):
     await ctx.send("📝 Please type the message to pin as sticky:")
+
     def check(m): return m.author == ctx.author and m.channel == ctx.channel
     try:
         reply = await bot.wait_for("message", check=check, timeout=60)
+
+        # Delete old sticky note if exists
+        doc = await sticky_col.find_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)})
+        if doc:
+            try:
+                old_msg = await ctx.channel.fetch_message(doc["message"])
+                await old_msg.delete()
+            except Exception as e:
+                print(f"[stickynote delete error] {e}")
+
+        # Send new sticky note and save to DB
         sent = await ctx.send(reply.content)
-        sticky_col.update_one({"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)},
-                              {"$set": {"text": reply.content, "message": sent.id}}, upsert=True)
+        await sticky_col.update_one(
+            {"guild": str(ctx.guild.id), "channel": str(ctx.channel.id)},
+            {"$set": {"text": reply.content, "message": sent.id}},
+            upsert=True
+        )
         await ctx.send("✅ Sticky note created.")
     except asyncio.TimeoutError:
         await ctx.send("❌ Timeout. Sticky note creation cancelled.")
@@ -832,6 +849,41 @@ async def unstickynote(ctx):
         await ctx.send("✅ Sticky note removed.")
     else:
         await ctx.send("⚠️ No sticky note set for this channel.")
+        
+# Store last trigger time per channel
+last_sticky_trigger = defaultdict(float)
+
+# Keep track of last sticky message ID per channel
+last_sticky_msg = {}
+
+@bot.event
+async def on_message(message):
+    if message.author.bot or not message.guild:
+        return
+
+    doc = await sticky_col.find_one({
+        "guild": str(message.guild.id),
+        "channel": str(message.channel.id)
+    })
+    if doc:
+        now = time.time()
+        if now - last_sticky_trigger[message.channel.id] >= 3:
+            last_sticky_trigger[message.channel.id] = now
+            try:
+                # Delete old sticky message if exists
+                old_id = last_sticky_msg.get(message.channel.id)
+                if old_id:
+                    old = await message.channel.fetch_message(old_id)
+                    await old.delete()
+                # Send and store new sticky
+                embed = discord.Embed(description=doc["text"], color=discord.Color.light_grey())
+                sent = await message.channel.send(embed=embed)
+                last_sticky_msg[message.channel.id] = sent.id
+            except Exception as e:
+                print(f"[sticky repost error] {e}")
+
+    await bot.process_commands(message)
+    asyncio.create_task(sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True))
 
 @bot.command()
 @staff_only()
