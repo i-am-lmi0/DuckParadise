@@ -3,7 +3,7 @@ sys.modules["audioop"] = types.ModuleType("audioop")  # Prevent audioop errors
 print("audioop monkey-patched")
 
 import os, asyncio, random, traceback, threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
 import discord
 from discord.ext import commands, tasks
@@ -174,7 +174,7 @@ class CommandPages(View):
 
 @tasks.loop(minutes=1)
 async def check_expired_mutes():
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     async for doc in mod_col.find({"muted_until": {"$exists": True}}):
         try:
             mute_until = datetime.fromisoformat(doc["muted_until"])
@@ -449,7 +449,9 @@ async def shop(ctx):
     await ctx.send(embed=embed)
     
 @bot.command()
-async def buy(ctx, item: str):
+async def buy(ctx, *, item: str = None):
+    if not item:
+        return await ctx.send("❌ You must specify an item to buy, e.g., `?buy laptop`.")
     item = item.lower()
     store_item = await shop_col.find_one({"_id": item})
     if not store_item:
