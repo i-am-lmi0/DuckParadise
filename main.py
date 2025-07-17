@@ -272,7 +272,7 @@ async def on_message(message):
         await message.channel.send(f"✅ Welcome back, {message.author.mention}! AFK removed.")
 
     await bot.process_commands(message)
-    asyncio.create_task(sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True))
+    await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
         
 # 3. COMMANDS =================================================
 @bot.command()
