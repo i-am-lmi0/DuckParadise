@@ -1194,7 +1194,8 @@ async def pun(ctx):
 @bot.command()
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
-    
+
+bot.remove_command("help")
 @bot.command(aliases=["help"])
 async def cmds(ctx):
     doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
