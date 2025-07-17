@@ -673,8 +673,6 @@ async def fish(ctx):
 
     await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
 
-from datetime import datetime, timedelta
-
 @bot.command(aliases=["steal"])
 @commands.cooldown(1, 10800, commands.BucketType.user)  # 3 hour cooldown
 async def rob(ctx, member: discord.Member):
@@ -760,21 +758,7 @@ async def use(ctx, *, item: str):
     elif item == "fishing rod":
         await ctx.send("🎣 You cast your line into the water... good luck fishing!")
     else:
-        await ctx.send(f"🔧 You used a {item}!")
-
-    # Feedback for using items
-    if item == "fishing_rod":
-        await ctx.send("🎣 You used your fishing rod to fish faster!")
-    elif item == "laptop":
-        await ctx.send("💻 You used your laptop. You'll earn extra coins next time you work!")
-    else:
-        await ctx.send(f"✅ You used a {item}, but nothing special happened.")
-
-    inv.remove(item)
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"inventory": inv}}
-    )
+        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
     
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
@@ -1113,11 +1097,6 @@ async def on_member_join(member):
             )
             boost_embed.set_thumbnail(url=member.display_avatar.url)
             await boost_ch.send(embed=boost_embed)
-            
-from discord.ext.commands import cooldown, BucketType
-import aiohttp
-
-ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741]
 
 @bot.command()
 @cooldown(1, 5, BucketType.user)
