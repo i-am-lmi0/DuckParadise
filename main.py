@@ -207,14 +207,18 @@ async def before_unmute_loop():
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck"))
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash commands.")
-    except Exception as e:
-        print(f"❌ Slash command sync failed: {e}")
-    check_expired_mutes.start()
+    await bot.change_presence(activity=discord.Game(name="theofficialtruck"))
     print(f"🎉 Bot ready — Logged in as {bot.user}")
+
+    # Only insert shop items once
+    existing = await shop_col.count_documents({})
+    if existing == 0:
+        initial_items = [
+            {"_id": "fishing rod", "price": 150, "description": "🎣 Catch fish to earn coins."},
+            {"_id": "laptop", "price": 500, "description": "💻 Needed to work certain jobs."}
+        ]
+        await shop_col.insert_many(initial_items)
+        print("✅ Shop items added.")
     
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
@@ -631,8 +635,11 @@ async def leaderboard(ctx):
 async def coinflip(ctx, amount: int):
     data = await get_user(ctx.guild.id, ctx.author.id)
 
-    if amount <= 0 or amount > data["wallet"]:
+    if amount <= 0:
         return await ctx.send("❌ Invalid amount to coin flip.")
+    if amount > data["wallet"]:
+        return await ctx.send("❌ You can't afford that!")
+    
 
     # add effects/boosts here
     win_chance = 0.5
@@ -731,12 +738,29 @@ async def passive(ctx):
     await ctx.send("🛡️ Passive mode enabled for 24 hours — you can't rob or be robbed.")
 
 @bot.command()
-async def use(ctx, item: str):
+async def use(ctx, *, item: str):
     item = item.lower()
     data = await get_user(ctx.guild.id, ctx.author.id)
     inv = data.get("inventory", [])
-    if item not in inv:
+
+    # Find item ignoring case
+    matched_item = next((i for i in inv if i.lower() == item), None)
+    if not matched_item:
         return await ctx.send(f"❌ You don't have a {item} in your inventory.")
+
+    # Remove one instance
+    inv.remove(matched_item)
+    await economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"inventory": inv}}
+    )
+
+    if item == "laptop":
+        await ctx.send("💻 You opened your laptop. Time to work!")
+    elif item == "fishing rod":
+        await ctx.send("🎣 You cast your line into the water... good luck fishing!")
+    else:
+        await ctx.send(f"🔧 You used a {item}!")
 
     # Feedback for using items
     if item == "fishing_rod":
@@ -1263,16 +1287,6 @@ async def override(ctx):
         await ctx.send("🚀 Bot unlocked!")
     else:
         await ctx.send("❌ You don't have permission.")
-
-@bot.event
-async def on_ready():
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="theofficialtruck"))
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash commands.")
-    except Exception as e:
-        print(f"❌ Slash command sync failed: {e}")
-    print(f"Logged in as {bot.user}")
 
 # Flask keep-alive for Render
 app = Flask(__name__)
