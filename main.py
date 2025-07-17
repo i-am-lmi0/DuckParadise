@@ -492,7 +492,7 @@ async def work(ctx):
         return await ctx.send(f"🕒 You can work again in {rem.seconds//60} minutes")
 
     if "laptop" not in data["inventory"]:
-        return await ctx.send("💻 You need a laptop to work! Buy one with `?buy laptop`.")
+        return await ctx.send("💻 You need a laptop to work!")
 
     earnings = 300
     new_wallet = data["wallet"] + earnings
@@ -522,8 +522,10 @@ async def beg(ctx):
 @bot.command(aliases=["dep"])
 async def deposit(ctx, amount: int):
     data = await get_user(ctx.guild.id, ctx.author.id)
-    if amount <= 0 or amount > data["wallet"]:
+    if amount <= 0:
         return await ctx.send("❌ Invalid deposit amount.")
+    if amount > data["wallet"]:
+        return await ctx.send("❌ You can't afford that!")
 
     economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
@@ -537,8 +539,10 @@ async def deposit(ctx, amount: int):
 @bot.command(aliases=["with"])
 async def withdraw(ctx, amount: int):
     data = await get_user(ctx.guild.id, ctx.author.id)
-    if amount <= 0 or amount > data["bank"]:
+    if amount <= 0:
         return await ctx.send("❌ Invalid withdrawal amount.")
+    if amount > data["bank"]:
+        return await ctx.send("❌ You can't afford that")
 
     economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
@@ -633,9 +637,7 @@ async def coinflip(ctx, amount: int):
         return await ctx.send("❌ Invalid amount to coin flip.")
     if amount > data["wallet"]:
         return await ctx.send("❌ You can't afford that!")
-    
 
-    # add effects/boosts here
     win_chance = 0.5
     won = random.random() < win_chance
 
@@ -654,8 +656,8 @@ async def coinflip(ctx, amount: int):
 async def fish(ctx):
     data = await get_user(ctx.guild.id, ctx.author.id)
 
-    if "fishing_rod" not in data["inventory"]:
-        return await ctx.send("🎣 You need a fishing rod to fish! Buy one with `?buy fishing_rod`.")
+    if "fishing rod" not in data["inventory"]:
+        return await ctx.send("🎣 You need a fishing rod to fish!")
 
     catch = random.choice(fishes)
     data["wallet"] += catch[1]
@@ -747,12 +749,10 @@ async def use(ctx, *, item: str):
         {"$set": {"inventory": inv}}
     )
 
-    if item == "laptop":
-        await ctx.send("💻 You opened your laptop. Time to work!")
-    elif item == "fishing rod":
-        await ctx.send("🎣 You cast your line into the water... good luck fishing!")
-    else:
-        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
+#    if item == "_______":
+#        await ctx.send("_____________")
+#    else:
+#        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
     
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
