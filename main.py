@@ -15,6 +15,7 @@ from discord.ext.commands import cooldown, BucketType
 from pytz import UTC
 from collections import defaultdict
 import time
+from dateutil import parser
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -214,6 +215,66 @@ async def on_ready():
         print(f"❌ Slash command sync failed: {e}")
     check_expired_mutes.start()
     print(f"🎉 Bot ready — Logged in as {bot.user}")
+    
+# Store last trigger time per channel
+last_sticky_trigger = defaultdict(float)
+
+# Keep track of last sticky message ID per channel
+last_sticky_msg = {}
+
+@bot.event
+async def on_message(message):
+    if message.author.bot or not message.guild:
+        return
+        
+# STICKYNOTE CONFIG ===============================
+    doc = await sticky_col.find_one({
+        "guild": str(message.guild.id),
+        "channel": str(message.channel.id)
+    })
+    if doc:
+        now = time.time()
+        if now - last_sticky_trigger[message.channel.id] >= 3:
+            last_sticky_trigger[message.channel.id] = now
+            try:
+                # Delete old sticky message if exists
+                old_id = last_sticky_msg.get(message.channel.id)
+                if old_id:
+                    old = await message.channel.fetch_message(old_id)
+                    await old.delete()
+                # Send and store new sticky
+                embed = discord.Embed(description=doc["text"], color=discord.Color.light_grey())
+                sent = await message.channel.send(embed=embed)
+                last_sticky_msg[message.channel.id] = sent.id
+            except Exception as e:
+                print(f"[sticky repost error] {e}")
+
+# AFK CONFIG ======================================================================
+     # check mentions
+    for user in message.mentions:
+        doc = await afk_col.find_one({"_id": f"{message.guild.id}-{user.id}"})
+        if doc:
+            reason = doc.get("reason", "AFK")
+            timestamp = doc.get("timestamp")
+            if timestamp:
+                dt = parser.isoparse(timestamp)
+                elapsed = datetime.now(timezone.utc) - dt.replace(tzinfo=timezone.utc)
+                mins = int(elapsed.total_seconds() // 60)
+                hours = mins // 60
+                mins %= 60
+                time_str = f"{hours}h {mins}m ago" if hours else f"{mins} minutes ago"
+                await message.channel.send(f"📨 {user.display_name} is AFK ({reason}) — set {time_str}.")
+            else:
+                await message.channel.send(f"📨 {user.display_name} is AFK: {reason}")
+
+    # remove AFK status if the user talks
+    afk_key = f"{message.guild.id}-{message.author.id}"
+    if await afk_col.find_one({"_id": afk_key}):
+        await afk_col.delete_one({"_id": afk_key})
+        await message.channel.send(f"✅ Welcome back, {message.author.mention}! AFK removed.")
+
+    await bot.process_commands(message)
+    asyncio.create_task(sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True))
         
 # 3. COMMANDS =================================================
 @bot.command()
@@ -605,33 +666,69 @@ async def fish(ctx):
 
     await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
 
+from datetime import datetime, timedelta
+
 @bot.command(aliases=["steal"])
+@commands.cooldown(1, 10800, commands.BucketType.user)  # 3 hour cooldown
 async def rob(ctx, member: discord.Member):
     if member == ctx.author:
         return await ctx.send("❌ You can't rob yourself!")
 
-    robber = await get_user(ctx.guild.id, ctx.author.id)
-    victim = await get_user(ctx.guild.id, member.id)
+    # check passive mode for both
+    now = datetime.utcnow()
+    r_doc = await economy_col.find_one({"_id": f"{ctx.guild.id}-{ctx.author.id}"})
+    v_doc = await economy_col.find_one({"_id": f"{ctx.guild.id}-{member.id}"})
 
-    if robber["wallet"] < 500:
-        return await ctx.send("❌ You need at least 500 coins to attempt a robbery.")
-    if victim["wallet"] < 300:
-        return await ctx.send("❌ That user doesn't have enough coins to be robbed.")
+    if r_doc.get("passive_until"):
+        until = datetime.fromisoformat(r_doc["passive_until"])
+        if until > now:
+            return await ctx.send("🔒 You have passive mode enabled — disable it to rob others.")
 
-    amount = random.randint(100, min(500, victim["wallet"], robber["wallet"]))
-    robber["wallet"] += amount
-    victim["wallet"] -= amount
+    if v_doc.get("passive_until"):
+        until = datetime.fromisoformat(v_doc["passive_until"])
+        if until > now:
+            return await ctx.send("🔒 That user has passive mode enabled — you can't rob them.")
+
+    if r_doc["wallet"] < 500:
+        return await ctx.send("❌ You need at least 500 coins to rob.")
+    if v_doc["wallet"] < 300:
+        return await ctx.send("❌ They don’t have enough coins to rob.")
+
+    amount = random.randint(100, min(500, v_doc["wallet"], r_doc["wallet"]))
+    r_doc["wallet"] += amount
+    v_doc["wallet"] -= amount
 
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": robber["wallet"]}}
+        {"$set": {"wallet": r_doc["wallet"]}}
     )
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{member.id}"},
-        {"$set": {"wallet": victim["wallet"]}}
+        {"$set": {"wallet": v_doc["wallet"]}}
     )
 
     await ctx.send(f"💰 You robbed {member.display_name} and stole {amount} coins!")
+    
+@bot.command()
+async def passive(ctx):
+    user_id = f"{ctx.guild.id}-{ctx.author.id}"
+    now = datetime.utcnow()
+    user_data = await economy_col.find_one({"_id": user_id}) or {}
+
+    passive_until = user_data.get("passive_until")
+    if passive_until and datetime.fromisoformat(passive_until) > now:
+        rem = datetime.fromisoformat(passive_until) - now
+        hours = rem.seconds // 3600
+        mins = (rem.seconds % 3600) // 60
+        return await ctx.send(f"🕒 Passive mode already active for {rem.days}d {hours}h {mins}m.")
+
+    until_time = now + timedelta(hours=24)
+    await economy_col.update_one(
+        {"_id": user_id},
+        {"$set": {"passive_until": until_time.isoformat()}},
+        upsert=True
+    )
+    await ctx.send("🛡️ Passive mode enabled for 24 hours — you can't rob or be robbed.")
 
 @bot.command()
 async def use(ctx, item: str):
@@ -655,6 +752,18 @@ async def use(ctx, item: str):
         {"$set": {"inventory": inv}}
     )
     
+@bot.command()
+async def afk(ctx, *, reason="AFK"):
+    await afk_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {
+            "reason": reason,
+            "timestamp": datetime.utcnow().isoformat()
+        }},
+        upsert=True
+    )
+    await ctx.send(f"🛌 You are now AFK: {reason}")
+
 # Kick a member
 @bot.command()
 @staff_only()
@@ -849,41 +958,6 @@ async def unstickynote(ctx):
         await ctx.send("✅ Sticky note removed.")
     else:
         await ctx.send("⚠️ No sticky note set for this channel.")
-        
-# Store last trigger time per channel
-last_sticky_trigger = defaultdict(float)
-
-# Keep track of last sticky message ID per channel
-last_sticky_msg = {}
-
-@bot.event
-async def on_message(message):
-    if message.author.bot or not message.guild:
-        return
-
-    doc = await sticky_col.find_one({
-        "guild": str(message.guild.id),
-        "channel": str(message.channel.id)
-    })
-    if doc:
-        now = time.time()
-        if now - last_sticky_trigger[message.channel.id] >= 3:
-            last_sticky_trigger[message.channel.id] = now
-            try:
-                # Delete old sticky message if exists
-                old_id = last_sticky_msg.get(message.channel.id)
-                if old_id:
-                    old = await message.channel.fetch_message(old_id)
-                    await old.delete()
-                # Send and store new sticky
-                embed = discord.Embed(description=doc["text"], color=discord.Color.light_grey())
-                sent = await message.channel.send(embed=embed)
-                last_sticky_msg[message.channel.id] = sent.id
-            except Exception as e:
-                print(f"[sticky repost error] {e}")
-
-    await bot.process_commands(message)
-    asyncio.create_task(sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True))
 
 @bot.command()
 @staff_only()
@@ -1072,7 +1146,7 @@ async def pun(ctx):
         "Poultry in motion!",
         "Let’s get quackin’!",
         "Duck yeah!",
-        "I’m not just any bird—I’m a ducking legend.",
+        "I’m not just any bird — I’m a ducking legend.",
         "No egrets, just ducks.",
         "Fowl play is not tolerated here.",
         "I'm on a feathered roll.",
@@ -1097,7 +1171,7 @@ async def pun(ctx):
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
     
-@bot.command()
+@bot.command(aliases=["help"])
 async def cmds(ctx):
     doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
     prefix = doc.get("prefix", "?") if doc else "?"
