@@ -71,16 +71,10 @@ async def global_lock_check(ctx):
         await ctx.send("🔒 The bot is locked — only `override` by theofficialtruck works.")
         return False
     return True
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    
+@bot.event
+async def on_disconnect():
+    print("⚠️ Bot disconnected from Discord. Will attempt reconnect soon.")
 
 # 2. UTIL FUNCTIONS ===========================================
 def staff_only():
