@@ -482,27 +482,6 @@ async def daily(ctx):
     await ctx.send("✅ You claimed your daily reward of 500 coins!")
     
 @bot.command()
-async def work(ctx):
-    data = await get_user(ctx.guild.id, ctx.author.id)
-    now = datetime.utcnow()
-    last = data.get("last_work")
-
-    if last and now - datetime.fromisoformat(last) < timedelta(minutes=30):
-        rem = timedelta(minutes=30) - (now - datetime.fromisoformat(last))
-        return await ctx.send(f"🕒 You can work again in {rem.seconds//60} minutes")
-
-    if "laptop" not in data["inventory"]:
-        return await ctx.send("💻 You need a laptop to work!")
-
-    earnings = 300
-    new_wallet = data["wallet"] + earnings
-    economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": new_wallet, "last_work": now.isoformat()}}
-    )
-    await ctx.send(f"💼 You worked and earned {earnings} coins!")
-    
-@bot.command()
 async def beg(ctx):
     data = await get_user(ctx.guild.id, ctx.author.id)
     now = datetime.utcnow()
@@ -655,6 +634,157 @@ async def coinflip(ctx, amount: int):
 from datetime import datetime, timedelta
 
 @bot.command()
+@commands.cooldown(1, 3600, commands.BucketType.user)  # 1 ticket/hour
+async def lottery(ctx):
+    user_id = f"{ctx.guild.id}-{ctx.author.id}"
+    data = await get_user(ctx.guild.id, ctx.author.id)
+
+    ticket_price = 500
+    jackpot = random.randint(5000, 10000)
+    chance = 0.01  # 1% chance to win
+
+    if data["wallet"] < ticket_price:
+        return await ctx.send("🎟️ You need at least 300 coins to buy a lottery ticket.")
+
+    data["wallet"] -= ticket_price
+
+    win = random.random() <= chance
+    if win:
+        data["wallet"] += jackpot
+        await ctx.send(f"🎉 You hit the jackpot and won **{jackpot} coins**!")
+    else:
+        await ctx.send("😢 No luck this time. Better luck next draw!")
+
+    await economy_col.update_one(
+        {"_id": user_id},
+        {"$set": {"wallet": data["wallet"]}}
+    )
+    
+@bot.command(aliases=["mbox", "box"])
+@commands.cooldown(1, 3600, commands.BucketType.user)  # 1 box per hour
+async def mysterybox(ctx):
+    user_id = f"{ctx.guild.id}-{ctx.author.id}"
+    data = await get_user(ctx.guild.id, ctx.author.id)
+
+    box_price = 250
+    if data["wallet"] < box_price:
+        return await ctx.send("❌ You need 250 coins to open a Mystery Box.")
+
+    data["wallet"] -= box_price
+
+    # Rewards with probabilities
+    rewards = [
+        {"type": "garbage", "desc": "you found a half-empty bottle 🍼", "chance": 0.3},
+        {"type": "garbage", "desc": "you fished out some leftover pizza 🍕", "chance": 0.25},
+        {"type": "garbage", "desc": "you discovered a smelly sock 🧦", "chance": 0.2},
+        {"type": "coins", "amount": 100, "desc": "💰 You found 100 coins!", "chance": 0.1},
+        {"type": "coins", "amount": 300, "desc": "💸 Nice! You got 300 coins!", "chance": 0.05},
+        {"type": "item", "name": "fishing rod", "desc": "🎣 You won a Fishing Rod!", "chance": 0.05},
+        {"type": "item", "name": "laptop", "desc": "💻 You scored a shiny new Laptop!", "chance": 0.03},
+        {"type": "item", "name": "gold badge", "desc": "🏅 You got a rare Gold Badge!", "chance": 0.02},
+    ]
+
+    choices = [r for r in rewards]
+    weights = [r["chance"] for r in rewards]
+    reward = random.choices(choices, weights=weights, k=1)[0]
+
+    result_msg = reward["desc"]
+    if reward["type"] == "coins":
+        data["wallet"] += reward["amount"]
+    elif reward["type"] == "item":
+        data.setdefault("inventory", []).append(reward["name"])
+    # garbage: no value, just fun
+
+    await economy_col.update_one(
+        {"_id": user_id},
+        {"$set": {"wallet": data["wallet"], "inventory": data["inventory"]}}
+    )
+
+    await ctx.send(f"🎁 {result_msg}")
+    
+from datetime import datetime
+
+@bot.command()
+async def choosejob(ctx, *, job_name: str = None):
+    jobs = {
+        "developer": "Work for theofficialtruck as their assistant developer 🧑‍💻",
+        "duck": "Work for CuteBatak as their official deputy duck 🦆"
+    }
+
+    if not job_name or job_name.lower() not in jobs:
+        return await ctx.send(
+            "❌ Invalid job. Choose one:\n" +
+            "\n".join(f"**{k}**: {v}" for k, v in jobs.items())
+        )
+
+    job_name = job_name.lower()
+    await economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {
+            "job": job_name,
+            "job_start": datetime.utcnow(),
+            "promoted": False
+        }}
+    )
+    await ctx.send(f"✅ You are now working as a **{job_name.capitalize()}**!")
+
+@bot.command()
+@commands.cooldown(1, 43200, commands.BucketType.user)  # 12-hour cooldown
+async def work(ctx):
+    data = await get_user(ctx.guild.id, ctx.author.id)
+    job = data.get("job")
+    if not job:
+        prefix = (await prefix_col.find_one({"_id": str(ctx.guild.id)})) or {"prefix": "?"}
+        return await ctx.send(f"❌ Choose a job first using `{prefix['prefix']}choosejob`.")
+
+    # Check promotion eligibility
+    job_start = data.get("job_start")
+    promoted = data.get("promoted", False)
+
+    if job_start:
+        job_start = job_start if isinstance(job_start, datetime) else job_start.to_pydatetime()
+        days_worked = (datetime.utcnow() - job_start).days
+    else:
+        days_worked = 0
+
+    # Base payouts
+    base_payouts = {
+        "developer": (300, 600),
+        "duck": (200, 500)
+    }
+    promo_payouts = {
+        "developer": (600, 1000),
+        "duck": (500, 900)
+    }
+    descriptions = {
+        "developer": "You wrote some killer code and pushed to prod 💻",
+        "duck": "You danced and quacked through the duck pond 🦆"
+    }
+
+    # Check for promotion
+    if not promoted and days_worked >= 7:
+        if random.random() <= 0.001:  # 0.1% chance
+            promoted = True
+            await ctx.send("🎉 You’ve been **PROMOTED**! You now earn more in your job!")
+
+    # Get payout
+    low, high = promo_payouts[job] if promoted else base_payouts[job]
+    earned = random.randint(low, high)
+    data["wallet"] += earned
+
+    await economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {
+            "wallet": data["wallet"],
+            "promoted": promoted
+        }}
+    )
+
+    await ctx.send(f"🧾 {descriptions[job]}\n💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!")
+
+from datetime import datetime, timedelta
+
+@bot.command()
 async def fish(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
     data = await get_user(ctx.guild.id, ctx.author.id)
@@ -667,9 +797,13 @@ async def fish(ctx):
     last_fished = data.get("last_fished")
     now = datetime.utcnow()
     if last_fished:
+        # Convert to datetime if stored as string (in case it is)
+        if isinstance(last_fished, str):
+            last_fished = datetime.fromisoformat(last_fished)
+
         delta = now - last_fished
-        if delta < timedelta(hours=24):
-            hours_remaining = round((timedelta(hours=24) - delta).total_seconds() / 3600, 2)
+        if delta < timedelta(hours=3):
+            hours_remaining = round((timedelta(hours=3) - delta).total_seconds() / 3600, 2)
             return await ctx.send(f"🕒 You can fish again in {hours_remaining} hours.")
 
     # Perform the fishing
@@ -678,54 +812,70 @@ async def fish(ctx):
 
     await economy_col.update_one(
         {"_id": user_id},
-        {"$set": {"wallet": data["wallet"], "last_fished": now}}
+        {"$set": {
+            "wallet": data["wallet"],
+            "last_fished": now
+        }}
     )
 
     await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
-    
+
 @fish.error
 async def fish_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"🕒 You can fish again in {round(error.retry_after / 3600, 2)} hours.")
 
 @bot.command(aliases=["steal"])
-@commands.cooldown(1, 10800, commands.BucketType.user)  # 3 hour cooldown
+@commands.cooldown(1, 10800, commands.BucketType.user)  # 3 hour cooldown for robber
 async def rob(ctx, member: discord.Member):
     if member == ctx.author:
         return await ctx.send("❌ You can't rob yourself!")
 
-    # check passive mode for both
     now = datetime.utcnow()
-    r_doc = await economy_col.find_one({"_id": f"{ctx.guild.id}-{ctx.author.id}"})
-    v_doc = await economy_col.find_one({"_id": f"{ctx.guild.id}-{member.id}"})
+    robber_id = f"{ctx.guild.id}-{ctx.author.id}"
+    victim_id = f"{ctx.guild.id}-{member.id}"
 
+    r_doc = await economy_col.find_one({"_id": robber_id}) or {}
+    v_doc = await economy_col.find_one({"_id": victim_id}) or {}
+
+    # Check passive modes
     if r_doc.get("passive_until"):
         until = datetime.fromisoformat(r_doc["passive_until"])
         if until > now:
             return await ctx.send("🔒 You have passive mode enabled — disable it to rob others.")
-
     if v_doc.get("passive_until"):
         until = datetime.fromisoformat(v_doc["passive_until"])
         if until > now:
             return await ctx.send("🔒 That user has passive mode enabled — you can't rob them.")
 
-    if r_doc["wallet"] < 500:
+    # Victim rob cooldown
+    last_robbed = v_doc.get("last_robbed")
+    if last_robbed:
+        if isinstance(last_robbed, str):
+            last_robbed = datetime.fromisoformat(last_robbed)
+        if now - last_robbed < timedelta(hours=1):
+            rem = timedelta(hours=1) - (now - last_robbed)
+            minutes = round(rem.total_seconds() / 60)
+            return await ctx.send(f"🛡️ {member.display_name} is under protection. Try again in {minutes} minutes.")
+
+    # Wallet checks
+    if r_doc.get("wallet", 0) < 500:
         return await ctx.send("❌ You need at least 500 coins to rob.")
-    if v_doc["wallet"] < 300:
+    if v_doc.get("wallet", 0) < 300:
         return await ctx.send("❌ They don’t have enough coins to rob.")
 
+    # Robbery logic
     amount = random.randint(100, min(500, v_doc["wallet"], r_doc["wallet"]))
     r_doc["wallet"] += amount
     v_doc["wallet"] -= amount
 
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": r_doc["wallet"]}}
-    )
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{member.id}"},
-        {"$set": {"wallet": v_doc["wallet"]}}
-    )
+    await economy_col.update_one({"_id": robber_id}, {"$set": {"wallet": r_doc["wallet"]}})
+    await economy_col.update_one({"_id": victim_id}, {
+        "$set": {
+            "wallet": v_doc["wallet"],
+            "last_robbed": now
+        }
+    })
 
     await ctx.send(f"💰 You robbed {member.display_name} and stole {amount} coins!")
     
@@ -1227,6 +1377,9 @@ async def cmds(ctx):
         ("?coinflip / ?cf <amount>", "Coin flip for coins"),
         ("?fish", "Go fishing to earn coins"),
         ("?rob / ?steal @user", "Attempt to rob another user")
+        ("?lottery", "Join the lottery")
+        ("?mysterybox", "Open a mystery box")
+        ("?choosejob", "Choose your dream job")
     ]:
         economy.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
