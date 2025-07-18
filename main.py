@@ -638,7 +638,7 @@ async def coinflip(ctx, amount: int):
     if amount > data["wallet"]:
         return await ctx.send("❌ You can't afford that!")
 
-    win_chance = 0.5
+    win_chance = 0.3
     won = random.random() < win_chance
 
     new_wallet = data["wallet"] + amount if won else data["wallet"] - amount
@@ -652,22 +652,41 @@ async def coinflip(ctx, amount: int):
     else:
         await ctx.send(f"💸 You lost {amount} coins from flipping a coin.")
 
+from datetime import datetime, timedelta
+
 @bot.command()
 async def fish(ctx):
+    user_id = f"{ctx.guild.id}-{ctx.author.id}"
     data = await get_user(ctx.guild.id, ctx.author.id)
 
-    if "fishing rod" not in data["inventory"]:
+    # Check for fishing rod
+    if "fishing rod" not in data.get("inventory", []):
         return await ctx.send("🎣 You need a fishing rod to fish!")
 
+    # Check for cooldown
+    last_fished = data.get("last_fished")
+    now = datetime.utcnow()
+    if last_fished:
+        delta = now - last_fished
+        if delta < timedelta(hours=24):
+            hours_remaining = round((timedelta(hours=24) - delta).total_seconds() / 3600, 2)
+            return await ctx.send(f"🕒 You can fish again in {hours_remaining} hours.")
+
+    # Perform the fishing
     catch = random.choice(fishes)
     data["wallet"] += catch[1]
 
     await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": data["wallet"]}}
+        {"_id": user_id},
+        {"$set": {"wallet": data["wallet"], "last_fished": now}}
     )
 
     await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
+    
+@fish.error
+async def fish_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        await ctx.send(f"🕒 You can fish again in {round(error.retry_after / 3600, 2)} hours.")
 
 @bot.command(aliases=["steal"])
 @commands.cooldown(1, 10800, commands.BucketType.user)  # 3 hour cooldown
