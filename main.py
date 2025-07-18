@@ -385,7 +385,7 @@ async def on_presence_update(before, after):
                 title="Vanity Added ✨",
                 description=(
                     f"{after.mention} has been awarded **{role.name}** "
-                    f"for proudly displaying our vanity `gg/{keyword}` in their status!"
+                    f"for proudly displaying our vanity `{keyword}` in their status!"
                 ),
                 color=discord.Color.magenta(),
                 timestamp=datetime.utcnow()
@@ -400,7 +400,7 @@ async def on_presence_update(before, after):
                 title="Vanity Removed",
                 description=(
                     f"{after.mention} has lost **{role.name}** for no longer "
-                    f"displaying our vanity `gg/{keyword}`."
+                    f"displaying our vanity `{keyword}`."
                 ),
                 color=discord.Color.light_gray(),
                 timestamp=datetime.utcnow()
@@ -1413,6 +1413,7 @@ async def cmds(ctx):
         ("?lottery", "Join the lottery")
         ("?mysterybox", "Open a mystery box")
         ("?choosejob", "Choose your dream job")
+        ("?jobstatus", "Check your next promotion")
     ]:
         economy.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
