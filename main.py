@@ -706,14 +706,18 @@ from datetime import datetime
 
 @bot.command()
 async def choosejob(ctx, *, job_name: str = None):
+    # Get server prefix
+    doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
+    prefix = doc.get("prefix", "?") if doc else "?"
+
     jobs = {
         "developer": "Work for theofficialtruck as their assistant developer 🧑‍💻",
-        "duck": "Work for CuteBatak as their official deputy duck 🦆"
+        "duck": "Work for CuteBatak as their official duck 🦆"
     }
 
     if not job_name or job_name.lower() not in jobs:
         return await ctx.send(
-            "❌ Invalid job. Choose one:\n" +
+            f"❌ Invalid job. Choose one with `{prefix}choosejob`:\n" +
             "\n".join(f"**{k}**: {v}" for k, v in jobs.items())
         )
 
@@ -734,20 +738,22 @@ async def work(ctx):
     data = await get_user(ctx.guild.id, ctx.author.id)
     job = data.get("job")
     if not job:
-        prefix = (await prefix_col.find_one({"_id": str(ctx.guild.id)})) or {"prefix": "?"}
-        return await ctx.send(f"❌ Choose a job first using `{prefix['prefix']}choosejob`.")
+        # Use the correct prefix
+        doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
+        prefix = doc.get("prefix", "?") if doc else "?"
+        return await ctx.send(f"❌ Choose a job first using `{prefix}choosejob`.")
 
-    # Check promotion eligibility
+    # Requirement: developers must have a laptop
+    if job == "developer" and "laptop" not in data.get("inventory", []):
+        return await ctx.send("💻 You need a **laptop** to work as a developer! Use `<prefix>buy laptop`.")
+
     job_start = data.get("job_start")
     promoted = data.get("promoted", False)
-
     if job_start:
-        job_start = job_start if isinstance(job_start, datetime) else job_start.to_pydatetime()
         days_worked = (datetime.utcnow() - job_start).days
     else:
         days_worked = 0
 
-    # Base payouts
     base_payouts = {
         "developer": (300, 600),
         "duck": (200, 500)
@@ -758,31 +764,58 @@ async def work(ctx):
     }
     descriptions = {
         "developer": "You wrote some killer code and pushed to prod 💻",
-        "duck": "You danced and quacked through the duck pond 🦆"
+        "duck": "You danced and quacked around the duck pond 🦆"
     }
 
-    # Check for promotion
-    if not promoted and days_worked >= 7:
-        if random.random() <= 0.001:  # 0.1% chance
-            promoted = True
-            await ctx.send("🎉 You’ve been **PROMOTED**! You now earn more in your job!")
+    # 0.1% promotion after 7 days
+    if not promoted and days_worked >= 7 and random.random() <= 0.001:
+        promoted = True
+        await ctx.send("🎉 **Congratulations – You've been PROMOTED!** You now earn more in your job!")
 
-    # Get payout
     low, high = promo_payouts[job] if promoted else base_payouts[job]
     earned = random.randint(low, high)
-    data["wallet"] += earned
+    new_wallet = data["wallet"] + earned
 
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {
-            "wallet": data["wallet"],
-            "promoted": promoted
-        }}
+        {"$set": {"wallet": new_wallet, "promoted": promoted}}
     )
 
-    await ctx.send(f"🧾 {descriptions[job]}\n💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!")
+    await ctx.send(
+        f"🧾 {descriptions[job]}\n"
+        f"💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!"
+    )
 
-from datetime import datetime, timedelta
+@bot.command()
+async def jobstatus(ctx):
+    user_id = f"{ctx.guild.id}-{ctx.author.id}"
+    user_data = await economy_col.find_one({"_id": user_id}) or {}
+
+    job = user_data.get("job")
+    since = user_data.get("job_since")
+
+    if not job or not since:
+        return await ctx.send("💼 You don't currently have a job. Choose one with your server's prefix like `?choosejob`.")
+
+    since_dt = datetime.fromisoformat(since)
+    now = datetime.utcnow()
+    delta = now - since_dt
+
+    days = delta.days
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+
+    eligible = "✅ Eligible for promotion!" if days >= 7 else f"❌ Not eligible yet (need {7 - days} more days)."
+
+    embed = discord.Embed(
+        title=f"📋 Job Status for {ctx.author.display_name}",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Job", value=job.capitalize(), inline=False)
+    embed.add_field(name="Time on Job", value=f"{days}d {hours}h {minutes}m", inline=False)
+    embed.add_field(name="Promotion Chance", value=eligible, inline=False)
+
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def fish(ctx):
