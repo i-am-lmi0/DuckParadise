@@ -241,7 +241,7 @@ async def on_message(message):
                     old = await message.channel.fetch_message(old_id)
                     await old.delete()
                 # Send and store new sticky
-                embed = discord.Embed(description=doc["text"], color=discord.Color.light_grey())
+                embed = discord.Embed(description=doc["text"], color=discord.Color.burple())
                 sent = await message.channel.send(embed=embed)
                 last_sticky_msg[message.channel.id] = sent.id
             except Exception as e:
@@ -1216,7 +1216,7 @@ async def testwelcome(ctx, member: discord.Member = None):
     welcome_ch = guild.get_channel(welcome_doc.get("welcome_channel")) if welcome_doc else None
 
     if not welcome_ch:
-        return await ctx.send("❌ No welcome channel set. Use `?setwelcome #channel`.")
+        return await ctx.send("❌ No welcome channel set.")
 
     embed = discord.Embed(
         title=f"Welcome to Duck Paradise 🦆 quack!",
@@ -1243,7 +1243,7 @@ async def testboost(ctx, member: discord.Member = None):
     boost_ch = guild.get_channel(boost_doc.get("boost_channel")) if boost_doc else None
 
     if not boost_ch:
-        return await ctx.send("❌ No boost channel set. Use `?setboost #channel`.")
+        return await ctx.send("❌ No boost channel set.")
 
     boost_embed = discord.Embed(
         title="🚀 Boost Alert!",
@@ -1325,10 +1325,8 @@ async def pun(ctx):
         "Why did the duck go to therapy? It had a fowl attitude.",
         "Stop quacking jokes, you're cracking me up!",
         "I'm absolutely quackers for you!",
-        "No more bills, please—I'm not a real duck!",
         "You're egg-ceptional!",
         "You really ruffled my feathers (in a good way).",
-        "Duck off! (Just kidding.)",
         "Have you met my down-to-earth friend?",
         "This conversation is going swimmingly.",
         "That joke really waddled its way into my heart.",
@@ -1340,13 +1338,9 @@ async def pun(ctx):
         "You feather believe it!",
         "Don’t get your feathers ruffled.",
         "I can't wing it anymore!",
-        "What the duck is going on here?",
         "I beak to differ.",
         "Poultry in motion!",
         "Let’s get quackin’!",
-        "Duck yeah!",
-        "I’m not just any bird — I’m a ducking legend.",
-        "No egrets, just ducks.",
         "Fowl play is not tolerated here.",
         "I'm on a feathered roll.",
         "I bill-ieve in you!",
@@ -1356,7 +1350,6 @@ async def pun(ctx):
         "My life’s gone a bit south—like a migrating duck.",
         "You make my heart flap.",
         "Keep it ducky!",
-        "I’m beaking news: ducks rule!"
     ]
 
     embed = discord.Embed(
@@ -1409,11 +1402,11 @@ async def cmds(ctx):
         ("?leaderboard / ?lb", "View the top users"),
         ("?coinflip / ?cf <amount>", "Coin flip for coins"),
         ("?fish", "Go fishing to earn coins"),
-        ("?rob / ?steal @user", "Attempt to rob another user")
-        ("?lottery", "Join the lottery")
-        ("?mysterybox", "Open a mystery box")
-        ("?choosejob", "Choose your dream job")
-        ("?jobstatus", "Check your next promotion")
+        ("?rob / ?steal @user", "Attempt to rob another user"),
+        ("?lottery", "Join the lottery"),
+        ("?mysterybox", "Open a mystery box"),
+        ("?choosejob", "Choose your dream job"),
+        ("?jobstatus", "Check your next promotion"),
     ]:
         economy.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
