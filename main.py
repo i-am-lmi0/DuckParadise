@@ -43,6 +43,35 @@ fishes = [ # for economy game
     ("🐡 Pufferfish", 500)
 ]
 
+duck_questions = [
+    {
+        "question": "What breed is known for its upright posture and penguin-like walk?",
+        "options": ["A. Pekin", "B. Runner", "C. Mallard", "D. Muscovy"],
+        "answer": "B"
+    },
+    {
+        "question": "Which duck has a bright green head and is common in the wild?",
+        "options": ["A. Mallard", "B. Cayuga", "C. Wood Duck", "D. Goose"],
+        "answer": "A"
+    },
+    {
+        "question": "What’s the average lifespan of a duck in the wild?",
+        "options": ["A. 2 years", "B. 5-10 years", "C. 20 years", "D. 40 years"],
+        "answer": "B"
+    },
+    {
+        "question": "Who is the Supreme Duck Overlord in Duck Paradise?",
+        "options": ["A. TheTruck", "B. Daffy Duck", "C. CuteBatak", "D. Donald Duck"],
+        "answer": "C"
+    },
+    {
+        "question": "What's a group of ducks called?",
+        "options": ["A. A pack", "B. A gaggle", "C. A quack", "D. A raft"],
+        "answer": "D"
+    }
+]
+
+
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
 
 intents = discord.Intents.all()
@@ -955,6 +984,43 @@ async def use(ctx, *, item: str):
 #        await ctx.send("_____________")
 #    else:
 #        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
+
+@bot.command()
+async def duckquiz(ctx):
+    def check(msg):
+        return msg.author == ctx.author and msg.channel == ctx.channel
+
+    score = 0
+
+    for i, q in enumerate(duck_questions, 1):
+        await ctx.send(f"**Q{i}. {q['question']}**\n" + "\n".join(q["options"]))
+
+        try:
+            msg = await bot.wait_for("message", timeout=30.0, check=check)
+        except asyncio.TimeoutError:
+            await ctx.send("⌛ You took too long! Quiz ended.")
+            return
+
+        if msg.content.strip().upper() == q["answer"]:
+            score += 1
+            await ctx.send("✅ Correct!")
+        else:
+            await ctx.send(f"❌ Incorrect! The right answer was {q['answer']}.")
+
+    total = len(duck_questions)
+    percent = (score / total) * 100
+
+    await ctx.send(f"🎯 You got {score}/{total} correct! ({round(percent, 2)}%)")
+
+    if percent >= 80:
+        role = discord.utils.get(ctx.guild.roles, name="Certified Duck Expert")
+        if role:
+            await ctx.author.add_roles(role)
+            await ctx.send(f"🥳 Congrats! You've earned the **{role.name}** role!")
+        else:
+            await ctx.send("✨ You passed! But I couldn't find the reward role.")
+    else:
+        await ctx.send("🐥 Keep studying the duck scrolls and try again!")
     
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
@@ -1381,7 +1447,8 @@ async def cmds(ctx):
         ("?cmds", "Show this help menu"),
         ("?afk [reason]", "Set your AFK status"),
         ("?duck", "Random picture of a duck"),
-        ("?pun", "Random duck puns")
+        ("?pun", "Random duck puns"),
+        ("?duckquiz", "Standardized Duck Quiz")
     ]:
         general.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
@@ -1406,7 +1473,7 @@ async def cmds(ctx):
         ("?lottery", "Join the lottery"),
         ("?mysterybox", "Open a mystery box"),
         ("?choosejob", "Choose your dream job"),
-        ("?jobstatus", "Check your next promotion"),
+        ("?jobstatus", "Check your next promotion")
     ]:
         economy.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
