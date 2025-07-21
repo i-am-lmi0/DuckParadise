@@ -1013,7 +1013,7 @@ async def duckquiz(ctx):
     await ctx.send(f"🎯 You got {score}/{total} correct! ({round(percent, 2)}%)")
 
     if percent >= 80:
-        role = discord.utils.get(ctx.guild.roles, name="Certified Duck Expert")
+        role = discord.utils.get(ctx.guild.roles, name="Pond Professor")
         if role:
             await ctx.author.add_roles(role)
             await ctx.send(f"🥳 Congrats! You've earned the **{role.name}** role!")
