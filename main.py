@@ -5,6 +5,7 @@ print("audioop monkey-patched")
 import os, asyncio, random, traceback, threading
 from datetime import datetime, timedelta, timezone
 from motor.motor_asyncio import AsyncIOMotorClient
+from duckquiz_questions import questions
 import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
@@ -41,69 +42,6 @@ fishes = [ # for economy game
     ("🐠 Tropical Fish", 300),
     ("🦑 Squid", 400),
     ("🐡 Pufferfish", 500)
-]
-
-questions = [
-    {"id": 1, "q": "Which duck breed is known for its crested head?", "options": ["Pekin", "Call", "Crested", "Muscovy"], "answer": 3},
-    {"id": 2, "q": "What is a baby duck called?", "options": ["Gosling", "Ducklet", "Duckling", "Chick"], "answer": 3},
-    {"id": 3, "q": "Which duck is native to North America?", "options": ["Mandarin", "Muscovy", "Mallard", "Rouen"], "answer": 3},
-    {"id": 4, "q": "Ducks often sleep with one eye open to:", "options": ["Detect predators", "Blink less", "Conserve energy", "Look alert"], "answer": 1},
-    {"id": 5, "q": "Which part of a duck helps it steer in water?", "options": ["Beak", "Feathers", "Feet", "Tail"], "answer": 4},
-    {"id": 6, "q": "What is a male duck called?", "options": ["Hen", "Drake", "Gander", "Cockerel"], "answer": 2},
-    {"id": 7, "q": "Which duck breed is used in foie gras production?", "options": ["Pekin", "Muscovy", "Rouen", "Call"], "answer": 2},
-    {"id": 8, "q": "What do ducks mostly eat in the wild?", "options": ["Grains", "Insects and aquatic plants", "Cheese", "Fruits"], "answer": 2},
-    {"id": 9, "q": "How do ducks keep their feathers waterproof?", "options": ["By shaking off water", "Using preen gland oils", "Brushing them", "Drying in sun"], "answer": 2},
-    {"id": 10, "q": "Which duck is known for an upright posture and long legs?", "options": ["Cayuga", "Runner", "Pekin", "Call"], "answer": 2},
-    {"id": 11, "q": "Why do ducks bob their heads?", "options": ["To communicate", "To clean feathers", "To stretch", "To balance"], "answer": 1},
-    {"id": 12, "q": "Which breed resembles a Mallard but is larger?", "options": ["Crested", "Rouen", "Call", "Buff"], "answer": 2},
-    {"id": 13, "q": "What sound is typical of a male duck?", "options": ["Quack", "Squeak", "Raspy croak", "Growl"], "answer": 3},
-    {"id": 14, "q": "What is the average lifespan of a wild duck?", "options": ["1–2 years", "3–5 years", "5–10 years", "10–15 years"], "answer": 3},
-    {"id": 15, "q": "Which duck breed is notably vocal?", "options": ["Call", "Runner", "Buff", "Rouen"], "answer": 1},
-    {"id": 16, "q": "Why do ducks fly in a V-formation?", "options": ["To reduce wind resistance", "To appear orderly", "To follow a leader", "To maintain speed"], "answer": 1},
-    {"id": 17, "q": "Ducks belong to which family?", "options": ["Galliformes", "Anatidae", "Aviary", "Poultridae"], "answer": 2},
-    {"id": 18, "q": "When do ducks typically molt?", "options": ["Spring", "Summer", "Winter", "Autumn"], "answer": 2},
-    {"id": 19, "q": "Which duck breed lays bluish eggs?", "options": ["Khaki Campbell", "Indian Runner", "Magpie", "Swedish"], "answer": 4},
-    {"id": 20, "q": "Which of these is not a recognized duck breed?", "options": ["Swedish Blue", "Mandarin", "Polka Dabble", "Call"], "answer": 3},
-    {"id": 21, "q": "How many eyelids does a duck have?", "options": ["One", "Two", "Three", "None"], "answer": 3},
-    {"id": 22, "q": "Which duck breed is entirely black with an emerald sheen?", "options": ["Cayuga", "Rouen", "Muscovy", "Call"], "answer": 1},
-    {"id": 23, "q": "What is a group of ducks in water called?", "options": ["Flock", "Raft", "Team", "Quackpack"], "answer": 2},
-    {"id": 24, "q": "What is a group of ducks on land called?", "options": ["Herd", "Pack", "Waddle", "Paddle"], "answer": 3},
-    {"id": 25, "q": "What color is a male Mallard’s head?", "options": ["Red", "Blue", "Green", "Yellow"], "answer": 3},
-    {"id": 26, "q": "Which duck breed is known for prolific egg-laying?", "options": ["Khaki Campbell", "Pekin", "Cayuga", "Rouen"], "answer": 1},
-    {"id": 27, "q": "What is the name of the gland that ducks use to waterproof their feathers?", "options": ["Oil gland", "Preen gland", "Feather gland", "Duck waxer"], "answer": 2},
-    {"id": 28, "q": "What does 'dabbling' refer to?", "options": ["Walking in circles", "Head dipping in water", "Sleeping", "Jumping"], "answer": 2},
-    {"id": 29, "q": "How do ducks stay warm in cold water?", "options": ["Shiver", "Extra feathers", "Counter‑current heat exchange in legs", "Float more"], "answer": 3},
-    {"id": 30, "q": "Which species is especially colorful and kept for ornamental purposes?", "options": ["Pekin", "Mandarin", "Muscovy", "Swedish Blue"], "answer": 2},
-    {"id": 31, "q": "Why do ducks wag their tails?", "options": ["To dry off", "When excited", "For balance", "To display"], "answer": 2},
-    {"id": 32, "q": "Which duck breed is known for being relatively quiet?", "options": ["Rouen", "Pekin", "Muscovy", "Call"], "answer": 3},
-    {"id": 33, "q": "What material composes a duck’s bill?", "options": ["Bone", "Keratin", "Feather", "Cartilage"], "answer": 2},
-    {"id": 34, "q": "Can ducks perceive color?", "options": ["Yes", "No", "Only blue", "Only ultraviolet"], "answer": 1},
-    {"id": 35, "q": "Which breed has a bluish hue and white bib?", "options": ["Cayuga", "Swedish Blue", "Rouen", "Magpie"], "answer": 2},
-    {"id": 36, "q": "How fast can some ducks fly?", "options": ["10 mph", "30 mph", "60 mph", "100 mph"], "answer": 3},
-    {"id": 37, "q": "How many toes does a duck have on each foot?", "options": ["2", "3", "4", "5"], "answer": 3},
-    {"id": 38, "q": "Which small, domestic breed is popular as a pet?", "options": ["Runner", "Call", "Muscovy", "Pekin"], "answer": 2},
-    {"id": 39, "q": "When are ducks most active?", "options": ["Night", "Afternoon", "Morning and evening", "All day"], "answer": 3},
-    {"id": 40, "q": "What is unusual about Muscovy ducks?", "options": ["They quack loudly", "They do not quack", "They honk", "They chirp"], "answer": 2},
-    {"id": 41, "q": "Which breed is upright and runs quickly?", "options": ["Runner", "Cayuga", "Mallard", "Call"], "answer": 1},
-    {"id": 42, "q": "How do ducks clean their feathers?", "options": ["Scratch", "Rub in mud", "Preen with their beak", "Dive"], "answer": 3},
-    {"id": 43, "q": "Ducklings imprint on:", "options": ["Their mother", "The first moving object they see", "Their eggshell", "Water"], "answer": 2},
-    {"id": 44, "q": "Which part helps a duck steer in water?", "options": ["Beak", "Feet", "Tail", "Wings"], "answer": 3},
-    {"id": 45, "q": "Which duck is often mistaken for a goose due to its red face?", "options": ["Pekin", "Muscovy", "Rouen", "Mallard"], "answer": 2},
-    {"id": 46, "q": "Ducks belong to which taxonomic family?", "options": ["Galliformes", "Anatidae", "Passeriformes", "Strigidae"], "answer": 2},
-    {"id": 47, "q": "Why do ducks often sleep standing on one leg?", "options": ["To conserve body heat", "For posture", "To rest the other leg", "Habit"], "answer": 1},
-    {"id": 48, "q": "Duck eggs are usually:", "options": ["White", "Green", "Speckled", "Cream or blue‑green"], "answer": 4},
-    {"id": 49, "q": "Which duck breed has a crest of feathers on its head?", "options": ["Crested", "Cayuga", "Runner", "Call"], "answer": 1},
-    {"id": 50, "q": "What sound does a male duck typically make?", "options": ["Loud quack", "Hiss", "Low raspy sound", "Whistle"], "answer": 3},
-    {"id": 51, "q": "Which duck is commonly featured in Chinese cuisine?", "options": ["Rouen", "Pekin", "Muscovy", "Mandarin"], "answer": 2},
-    {"id": 52, "q": "What happens during a duck’s molt?", "options": ["Lays more eggs", "Gains weight", "Sheds and regrows feathers", "Migrates"], "answer": 3},
-    {"id": 53, "q": "Where are a duck's nostrils located?", "options": ["Feet", "Under wings", "Top of the bill", "Behind the eyes"], "answer": 3},
-    {"id": 54, "q": "What is a baby duck called?", "options": ["Gosling", "Pup", "Duckling", "Chick"], "answer": 3},
-    {"id": 55, "q": "Which duck has a black bill and dark emerald feathers?", "options": ["Rouen", "Khaki Campbell", "Cayuga", "Indian Runner"], "answer": 3},
-    {"id": 56, "q": "What color are most domesticated Pekin ducks?", "options": ["Brown", "White", "Black", "Grey"], "answer": 2},
-    {"id": 57, "q": "Can ducks sleep with one eye open?", "options": ["Yes", "No", "Only in winter", "Only ducklings can"], "answer": 1},
-    {"id": 58, "q": "Why do ducks bob their heads?", "options": ["To impress mates", "To check for wind", "To stretch", "They are confused"], "answer": 1},
-    {"id": 59, "q": "What is the typical lifespan of a domestic duck?", "options": ["1–2 years", "3–4 years", "5–10 years", "15–20 years"], "answer": 3},
-    {"id": 60, "q": "Which duck species is capable of perching in trees?", "options": ["Muscovy", "Pekin", "Rouen", "Khaki Campbell"], "answer": 1}
 ]
 
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
@@ -1019,93 +957,104 @@ async def use(ctx, *, item: str):
 #    else:
 #        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
 
-@bot.command(aliases=["ducktest"])
+@bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)
 async def duckquiz(ctx):
-    pool = questions.copy()
-    selected = []
-    num_questions = min(5, len(pool))
+    USER = str(ctx.author.id)
+    GUILD = str(ctx.guild.id)
+    NUM_Q = 10
+    PASS_PCT = 80.0
+    ROLE_ID = YOUR_ROLE_ID_HERE  # Replace accordingly
 
-    # Ensure no repeats across users: track used IDs in DB
-    used = await quiz_col.distinct("question_id", {"used": True})
-    pool = [q for q in pool if q["id"] not in used]
-    if len(pool) < num_questions:
+    # 1. Check if user has passed before
+    user_rec = await quiz_col.find_one({"guild": GUILD, "user": USER, "passed": True})
+    if user_rec:
+        dm = await ctx.author.create_dm()
+        await dm.send("ℹ You’ve already passed this quiz. Retake? Reply with `yes` to continue.")
+        try:
+            reply = await bot.wait_for(
+                "message", check=lambda m: m.author == ctx.author and isinstance(m.channel, discord.DMChannel),
+                timeout=30
+            )
+            if reply.content.strip().lower() != "yes":
+                return await ctx.send("✅ Okay, quiz cancelled.")
+        except asyncio.TimeoutError:
+            return await ctx.send("⌛ Timed out! Quiz cancelled.")
+    
+    # 2. Select questions
+    used_ids = await quiz_col.distinct("qid", {"guild": GUILD, "used": True})
+    pool = [q for q in questions if q["id"] not in used_ids]
+    if len(pool) < NUM_Q:
+        # Reset full cycle
+        await quiz_col.update_many({"guild": GUILD}, {"$unset": {"used": ""}})
         pool = questions.copy()
-        await quiz_col.update_many({}, {"$unset": {"used": ""}})
+    chosen = random.sample(pool, NUM_Q)
 
-    selected = random.sample(pool, k=num_questions)
-    question_docs = [{"quiz_id": None, "user": str(ctx.author.id),
-                      "question_id": q["id"], "answered": False} for q in selected]
+    # 3. Mark as used in guild
+    for q in chosen:
+        await quiz_col.update_one({"guild": GUILD, "qid": q["id"]},
+                                  {"$set": {"used": True}}, upsert=True)
 
-    # Create session record
+    # 4. Create quiz record
     quiz_doc = {
-        "user": str(ctx.author.id),
+        "guild": GUILD,
+        "user": USER,
         "started": datetime.utcnow(),
-        "questions": [q["id"] for q in selected],
+        "questions": [q["id"] for q in chosen],
         "answers": {},
-        "score": 0
+        "score": 0,
+        "completed": None,
+        "passed": False
     }
-    res = await quiz_col.insert_one(quiz_doc)
-    quiz_id = res.inserted_id
+    result = await quiz_col.insert_one(quiz_doc)
+    qid = result.inserted_id
 
-    # Mark selected as used
-    for q in selected:
-        await quiz_col.update_many({"question_id": q["id"]}, {"$set": {"used": True}}, upsert=True)
-
-    # Send quiz via DM
+    # 5. Send DM questions
     try:
         dm = await ctx.author.create_dm()
         score = 0
-        for idx, q in enumerate(selected, start=1):
-            opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
-            embed = discord.Embed(
-                title=f"Question {idx}/{num_questions}",
-                description=q["q"],
-                color=discord.Color.teal()
-            )
-            embed.add_field(name="Options", value=opts)
+        for i, q in enumerate(chosen, start=1):
+            opts = "\n".join(f"{j+1}. {opt}" for j, opt in enumerate(q["options"]))
+            embed = discord.Embed(title=f"Question {i}/{NUM_Q}", description=q["q"], color=discord.Color.teal())
+            embed.add_field(name="Options:", value=opts, inline=False)
             await dm.send(embed=embed)
 
             def check(m):
                 return m.author == ctx.author and isinstance(m.channel, discord.DMChannel) and m.content.isdigit()
 
             try:
-                msg = await bot.wait_for("message", timeout=30, check=check)
+                answer = int((await bot.wait_for('message', timeout=30, check=check)).content)
             except asyncio.TimeoutError:
-                await dm.send("⏰ Time's up! Moving to the next one.")
+                await dm.send("⏰ Time’s up!")
                 continue
 
-            answer = int(msg.content.strip())
             correct = (answer == q["answer"])
             if correct:
                 score += 1
                 await dm.send("✅ Correct!")
             else:
                 correct_opt = q["options"][q["answer"] - 1]
-                await dm.send(f"❌ Wrong! The answer was **{correct_opt}**.")
+                await dm.send(f"❌ Wrong! Answer was **{correct_opt}**.")
 
-            await quiz_col.update_one(
-                {"_id": quiz_id},
-                {"$set": {f"answers.{q['id']}": answer}}
-            )
+            await quiz_col.update_one({"_id": qid}, {"$set": {f"answers.{q['id']}": answer}})
 
-        percent = (score / num_questions) * 100
-        await quiz_col.update_one(
-            {"_id": quiz_id},
-            {"$set": {"score": score, "completed": datetime.utcnow()}}
-        )
-        await dm.send(f"📊 You scored **{score}/{num_questions}** = **{percent:.1f}%**")
+        pct = score / NUM_Q * 100
+        await quiz_col.update_one({"_id": qid},
+                                 {"$set": {"score": score, "completed": datetime.utcnow(), "passed": pct >= PASS_PCT}})
 
-        if percent >= 80:
-            role = ctx.guild.get_role(YOUR_ROLE_ID_HERE)
+        await dm.send(f"📊 You got **{score}/{NUM_Q}** = **{pct:.1f}%**")
+
+        if pct >= PASS_PCT:
+            role = ctx.guild.get_role(ROLE_ID)
             if role:
-                member = ctx.guild.get_member(ctx.author.id)
-                await member.add_roles(role)
-                await dm.send(f"🎉 You passed! You've been awarded the **{role.name}** role.")
+                await ctx.author.add_roles(role)
+                await dm.send(f"🎉 You passed and have been granted **{role.name}**!")
             else:
-                await dm.send("⚠️ Passed, but role missing—contact a staff member.")
+                await dm.send("⚠️ Quiz passed, but reward role is missing.")
     except discord.Forbidden:
-        await ctx.send("❌ I can't DM you! Please enable DMs from this server and try again.")
+        return await ctx.send("❌ Enable DMs and try again.")
+    
+    await ctx.send("✅ Quiz sent to your DMs!")
     
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
