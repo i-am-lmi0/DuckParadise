@@ -281,7 +281,7 @@ async def staffset(ctx, role: discord.Role):
     if ctx.author != ctx.guild.owner:
         return await ctx.send("❌ Only the server owner can set the staff role.")
 
-    settings_col.update_one(
+    await settings_col.update_one(
         {"guild": str(ctx.guild.id)},
         {"$set": {"staff_role": role.id}},
         upsert=True
@@ -476,7 +476,7 @@ async def daily(ctx):
         return await ctx.send(f"🕒 Claim again in {rem.seconds//3600}h {(rem.seconds//60)%60}m")
 
     new_balance = data['wallet'] + 500
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {"wallet": new_balance, "last_daily": now.isoformat()}}
     )
@@ -493,7 +493,7 @@ async def beg(ctx):
         return await ctx.send(f"🕒 You can beg again in {rem.seconds//60} minutes")
 
     amount = random.randint(50, 200)
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {"wallet": data["wallet"] + amount, "last_beg": now.isoformat()}}
     )
@@ -507,7 +507,7 @@ async def deposit(ctx, amount: int):
     if amount > data["wallet"]:
         return await ctx.send("❌ You can't afford that!")
 
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {
             "wallet": data["wallet"] - amount,
@@ -524,7 +524,7 @@ async def withdraw(ctx, amount: int):
     if amount > data["bank"]:
         return await ctx.send("❌ You can't afford that")
 
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {
             "wallet": data["wallet"] + amount,
@@ -548,7 +548,7 @@ async def shop(ctx):
 @bot.command()
 async def buy(ctx, *, item: str = None):
     if not item:
-        return await ctx.send("❌ You must specify an item to buy, e.g., `?buy laptop`.")
+        return await ctx.send("❌ You must specify an item to buy.")
     item = item.lower()
     store_item = await shop_col.find_one({"_id": item})
     if not store_item:
@@ -622,7 +622,7 @@ async def coinflip(ctx, amount: int):
     won = random.random() < win_chance
 
     new_wallet = data["wallet"] + amount if won else data["wallet"] - amount
-    economy_col.update_one(
+    await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {"wallet": new_wallet}}
     )
@@ -660,6 +660,14 @@ async def lottery(ctx):
         {"_id": user_id},
         {"$set": {"wallet": data["wallet"]}}
     )
+    
+@lottery.error
+async def lottery_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        rem = timedelta(seconds=error.retry_after)
+        mins = rem.seconds // 60
+        secs = rem.seconds % 60
+        return await ctx.send(f"🕒 Try again in {mins}m {secs}s.")
     
 @bot.command(aliases=["mbox", "box"])
 @commands.cooldown(1, 3600, commands.BucketType.user)  # 1 box per hour
@@ -746,7 +754,7 @@ async def work(ctx):
 
     # Requirement: developers must have a laptop
     if job == "developer" and "laptop" not in data.get("inventory", []):
-        return await ctx.send("💻 You need a **laptop** to work as a developer! Use `<prefix>buy laptop`.")
+        return await ctx.send("💻 You need a **laptop** to work as a developer!")
 
     job_start = data.get("job_start")
     promoted = data.get("promoted", False)
@@ -786,6 +794,14 @@ async def work(ctx):
         f"🧾 {descriptions[job]}\n"
         f"💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!"
     )
+    
+@work.error
+async def work_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        rem = timedelta(seconds=error.retry_after)
+        hours = rem.seconds // 3600
+        mins = (rem.seconds % 3600) // 60
+        return await ctx.send(f"🕒 Work cooldown: {hours}h {mins}m.")
 
 @bot.command()
 async def jobstatus(ctx):
@@ -912,6 +928,14 @@ async def rob(ctx, member: discord.Member):
     })
 
     await ctx.send(f"💰 You robbed {member.display_name} and stole {amount} coins!")
+    
+@rob.error
+async def rob_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        rem = timedelta(seconds=error.retry_after)
+        hours = rem.seconds // 3600
+        mins = (rem.seconds % 3600) // 60
+        return await ctx.send(f"🕒 You can rob again in {hours}h {mins}m.")
     
 @bot.command()
 async def passive(ctx):
@@ -1139,7 +1163,7 @@ async def unmute(ctx, member: discord.Member):
 @bot.command()
 @staff_only()
 async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
-    mod_col.update_one(
+    await mod_col.update_one(
         {"guild": str(ctx.guild.id), "user": str(member.id)},
         {"$push": {"warnings": {"by": str(ctx.author), "reason": reason, "time": datetime.utcnow().isoformat()}}},
         upsert=True
@@ -1151,7 +1175,7 @@ async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
 @bot.command()
 @staff_only()
 async def clearwarns(ctx, member: discord.Member):
-    mod_col.update_one({"guild": str(ctx.guild.id), "user": str(member.id)}, {"$set": {"warnings": []}})
+    await mod_col.update_one({"guild": str(ctx.guild.id), "user": str(member.id)}, {"$set": {"warnings": []}})
     await ctx.send(f"✅ All warnings for {member.mention} have been cleared.")
     await log_action(ctx, f"Cleared warnings for {member}", user_id=member.id, action_type="clearwarns")
     
@@ -1212,7 +1236,7 @@ async def reactionrole(ctx, message_id: int, emoji, role: discord.Role):
     try:
         msg = await ctx.channel.fetch_message(message_id)
         await msg.add_reaction(emoji)
-        reaction_col.update_one({"message": message_id}, {"$set": {"emoji": str(emoji), "role": role.id}}, upsert=True)
+        await reaction_col.update_one({"message": message_id}, {"$set": {"emoji": str(emoji), "role": role.id}}, upsert=True)
         await ctx.send(f"✅ Reaction role set: {emoji} will grant {role.mention}.")
     except Exception as e:
         print(f"[reactionrole error] {e}")
@@ -1377,7 +1401,14 @@ async def on_member_join(member):
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_image(url="https://cdn.discordapp.com/attachments/1370374741579534408/1386456926300409939/duckduckgo-welcome.gif")
         embed.set_footer(text=f"You are our {guild.member_count}th member!")
-        await welcome_ch.send(f"welcome, {member.mention} 🐥!", embed=embed)
+        msg = await welcome_ch.send(f"welcome, {member.mention} 🐥!", embed=embed)
+
+          # --- CUSTOM EMOJI REACTION ---
+          duck_emoji = discord.utils.get(guild.emojis, name="duckwave2")
+          if duck_emoji:
+              await msg.add_reaction(duck_emoji)
+          else:
+              print("Custom emoji 'duckwave2' not found in guild.")
 
     # BOOST ==========================
     if member.premium_since:
