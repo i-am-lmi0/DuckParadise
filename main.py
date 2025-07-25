@@ -546,6 +546,16 @@ async def shop(ctx):
     await ctx.send(embed=embed)
     
 @bot.command()
+@staff_only()
+async def additem(ctx, name, price: int, *, description):
+    await shop_col.update_one(
+        {"guild": str(ctx.guild.id)},
+        {"$push": {"items": {"name": name.lower(), "price": price, "description": description}}},
+        upsert=True
+    )
+    await ctx.send(f"✅ `{name}` added to the shop.")
+    
+@bot.command()
 async def buy(ctx, *, item: str = None):
     if not item:
         return await ctx.send("❌ You must specify an item to buy.")
@@ -565,6 +575,29 @@ async def buy(ctx, *, item: str = None):
         {"$set": {"wallet": data["wallet"], "inventory": data["inventory"]}}
     )
     await ctx.send(f"✅ You bought a {item}!")
+    
+@bot.command()
+async def use(ctx, *, item: str):
+    item = item.lower()
+    data = await get_user(ctx.guild.id, ctx.author.id)
+    inv = data.get("inventory", [])
+
+    # Find item ignoring case
+    matched_item = next((i for i in inv if i.lower() == item), None)
+    if not matched_item:
+        return await ctx.send(f"❌ You don't have a {item} in your inventory.")
+
+    # Remove one instance
+    inv.remove(matched_item)
+    await economy_col.update_one(
+        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+        {"$set": {"inventory": inv}}
+    )
+
+#    if item == "_______":
+#        await ctx.send("_____________")
+#    else:
+#        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
 
 @bot.command(aliases=["inv"])
 async def inventory(ctx):
@@ -772,7 +805,7 @@ async def work(ctx):
         "duck": (500, 900)
     }
     descriptions = {
-        "developer": "You wrote some killer code and pushed to prod 💻",
+        "developer": "You wrote some killer code and your boss loved it 💻",
         "duck": "You danced and quacked around the duck pond 🦆"
     }
 
@@ -798,10 +831,10 @@ async def work(ctx):
 @work.error
 async def work_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
-        rem = timedelta(seconds=error.retry_after)
-        hours = rem.seconds // 3600
-        mins = (rem.seconds % 3600) // 60
-        return await ctx.send(f"🕒 Work cooldown: {hours}h {mins}m.")
+        total_seconds = int(error.retry_after)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        return await ctx.send(f"🕒 You can work again in {hours}h {minutes}m.")
 
 @bot.command()
 async def jobstatus(ctx):
@@ -957,31 +990,6 @@ async def passive(ctx):
         upsert=True
     )
     await ctx.send("🛡️ Passive mode enabled for 24 hours — you can't rob or be robbed.")
-
-@bot.command()
-async def use(ctx, *, item: str):
-    item = item.lower()
-    data = await get_user(ctx.guild.id, ctx.author.id)
-    inv = data.get("inventory", [])
-
-    # Find item ignoring case
-    matched_item = next((i for i in inv if i.lower() == item), None)
-    if not matched_item:
-        return await ctx.send(f"❌ You don't have a {item} in your inventory.")
-
-    # Remove one instance
-    inv.remove(matched_item)
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"inventory": inv}}
-    )
-
-#    if item == "_______":
-#        await ctx.send("_____________")
-#    else:
-#        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
-
-from duckquiz_questions import questions
 
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)
@@ -1588,7 +1596,8 @@ async def cmds(ctx):
             ("?userinfo [@user]", "View detailed user info"),
             ("?vanityroles @role #logchannel <status>", "Track users with keyword in status"),
             ("?promoters", "View users with the vanity role"),
-            ("?resetpromoters", "Clear all users from the vanity role")
+            ("?resetpromoters", "Clear all users from the vanity role"),
+            ("?additem", "Add an item to the shop")
         ]:
             staff.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
