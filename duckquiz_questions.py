@@ -98,7 +98,7 @@ questions = [
     {"id": 97, "q": "What is a common disease affecting ducks?", "options": ["Avian cholera", "Duck rot", "Feather fungus", "Gizzard worms"], "answer": 1},
     {"id": 98, "q": "What’s a unique feature of duck eggs compared to chicken eggs?", "options": ["Smaller yolk", "More protein", "Larger white", "More fat"], "answer": 4},
     {"id": 99, "q": "Which breed is typically used in heritage poultry shows?", "options": ["Pekin", "Saxony", "Rouen", "Call"], "answer": 4},
-    {"id": 100, "q": "Which duck has a reputation for being the most independent?", "options": ["Muscovy", "Indian Runner", "Call", "Cayuga"], "answer": 1}
+    {"id": 100, "q": "Which duck has a reputation for being the most independent?", "options": ["Muscovy", "Indian Runner", "Call", "Cayuga"], "answer": 1},
     {"id": 101, "q": "Which duck breed is known for its white plumage and orange bill?", "options": ["Pekin", "Rouen", "Cayuga", "Khaki Campbell"], "answer": 1},
     {"id": 102, "q": "What does it mean when ducks 'dabble' in water?", "options": ["Dive deep", "Tip forward to feed", "Swim backwards", "Shake feathers"], "answer": 2},
     {"id": 103, "q": "Which duck breed has a distinctive knob on its bill?", "options": ["Muscovy", "Call", "Runner", "Pekin"], "answer": 1},
