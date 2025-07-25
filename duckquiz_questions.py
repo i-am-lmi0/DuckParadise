@@ -58,7 +58,7 @@ questions = [
     {"id": 57, "q": "Can ducks sleep with one eye open?", "options": ["Yes", "No", "Only in winter", "Only ducklings can"], "answer": 1},
     {"id": 58, "q": "Why do ducks bob their heads?", "options": ["To impress mates", "To check for wind", "To stretch", "They are confused"], "answer": 1},
     {"id": 59, "q": "What is the typical lifespan of a domestic duck?", "options": ["1–2 years", "3–4 years", "5–10 years", "15–20 years"], "answer": 3},
-    {"id": 60, "q": "Which duck species is capable of perching in trees?", "options": ["Muscovy", "Pekin", "Rouen", "Khaki Campbell"], "answer": 1}
+    {"id": 60, "q": "Which duck species is capable of perching in trees?", "options": ["Muscovy", "Pekin", "Rouen", "Khaki Campbell"], "answer": 1},
     {"id": 61, "q": "Which duck breed has a calm temperament and is popular among beginners?", "options": ["Indian Runner", "Pekin", "Call", "Magpie"], "answer": 2},
     {"id": 62, "q": "What is the name for the process where ducks lose and regrow feathers?", "options": ["Shedding", "Molting", "Furling", "Plucking"], "answer": 2},
     {"id": 63, "q": "Which duck breed originated in Germany?", "options": ["Rouen", "Magpie", "Saxony", "Pekin"], "answer": 3},
@@ -78,7 +78,7 @@ questions = [
     {"id": 77, "q": "What time of day do ducks usually feed?", "options": ["Afternoon", "Morning and evening", "Night", "All day"], "answer": 2},
     {"id": 78, "q": "How do ducks communicate?", "options": ["Through quacks and body language", "Only body language", "Via scent", "Through vibrations"], "answer": 1},
     {"id": 79, "q": "What is unique about duck reproduction?", "options": ["External fertilization", "No mating rituals", "Corkscrew-shaped penis", "Eggs are live-born"], "answer": 3},
-    {"id": 80, "q": "Which duck is known for rapid leg movement while running?", "options": ["Crested", "Call", "Runner", "Khaki Campbell"], "answer": 3}
+    {"id": 80, "q": "Which duck is known for rapid leg movement while running?", "options": ["Crested", "Call", "Runner", "Khaki Campbell"], "answer": 3},
     {"id": 81, "q": "Which duck breed was developed in England for meat production?", "options": ["Khaki Campbell", "Rouen", "Buff Orpington", "Magpie"], "answer": 3},
     {"id": 82, "q": "What color are the feet of most adult Mallard ducks?", "options": ["Yellow", "Black", "Orange", "Pink"], "answer": 3},
     {"id": 83, "q": "Which duck is known for its ability to dive underwater?", "options": ["Pekin", "Muscovy", "Canvasback", "Call"], "answer": 3},
