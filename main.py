@@ -33,6 +33,7 @@ reaction_col = db["reactionroles"]
 shop_col = db["shop"]
 welcome_col = db["welcome"]
 boost_col = db["boost"]
+quiz_col = db['quiz']
 
 print("Top of main.py reached")
 
@@ -490,14 +491,16 @@ async def beg(ctx):
 
     if last and now - datetime.fromisoformat(last) < timedelta(minutes=15):
         rem = timedelta(minutes=15) - (now - datetime.fromisoformat(last))
-        return await ctx.send(f"🕒 You can beg again in {rem.seconds//60} minutes")
+        return await ctx.send(f"🕒 You can beg again in {rem.seconds // 60} minutes.")
 
     amount = random.randint(50, 200)
+    donor = random.choice(["TheTruck", "CuteBatak"])
+
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {"wallet": data["wallet"] + amount, "last_beg": now.isoformat()}}
     )
-    await ctx.send(f"🙇 You begged and received {amount} coins!")
+    await ctx.send(f"🙇 {donor} was kind enough to donate **{amount} coins** to you!")
     
 @bot.command(aliases=["dep"])
 async def deposit(ctx, amount: int):
@@ -548,12 +551,33 @@ async def shop(ctx):
 @bot.command()
 @staff_only()
 async def additem(ctx, name, price: int, *, description):
-    await shop_col.update_one(
-        {"guild": str(ctx.guild.id)},
-        {"$push": {"items": {"name": name.lower(), "price": price, "description": description}}},
-        upsert=True
-    )
+    await shop_col.insert_one({
+        "_id": name.lower(),
+        "price": price,
+        "description": description
+    })
     await ctx.send(f"✅ `{name}` added to the shop.")
+    
+@bot.command()
+@staff_only()
+async def edititem(ctx, name, price: int, *, description):
+    result = await shop_col.update_one(
+        {"_id": name.lower()},
+        {"$set": {"price": price, "description": description}}
+    )
+    if result.matched_count:
+        await ctx.send(f"📝 `{name}` updated!")
+    else:
+        await ctx.send("❌ Item not found.")
+
+@bot.command()
+@staff_only()
+async def delitem(ctx, name):
+    result = await shop_col.delete_one({"_id": name.lower()})
+    if result.deleted_count:
+        await ctx.send(f"🗑️ `{name}` removed from the shop.")
+    else:
+        await ctx.send("❌ Item not found.")
     
 @bot.command()
 async def buy(ctx, *, item: str = None):
@@ -643,6 +667,7 @@ async def leaderboard(ctx):
     await ctx.send(embed=embed)
     
 @bot.command(aliases=["cf"])
+@commands.cooldown(1, 60, commands.BucketType.user)
 async def coinflip(ctx, amount: int):
     data = await get_user(ctx.guild.id, ctx.author.id)
 
@@ -664,8 +689,12 @@ async def coinflip(ctx, amount: int):
         await ctx.send(f"🎉 You won {amount} coins from flipping a coin!")
     else:
         await ctx.send(f"💸 You lost {amount} coins from flipping a coin.")
-
-from datetime import datetime, timedelta
+        
+@coinflip.error
+async def coinflip_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        secs = int(error.retry_after)
+        await ctx.send(f"🕒 Coinflip cooldown: try again in {secs}s.")
 
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)  # 1 ticket/hour
@@ -767,10 +796,11 @@ async def choosejob(ctx, *, job_name: str = None):
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {
-            "job": job_name,
-            "job_start": datetime.utcnow(),
+            "job": job.lower(),
+            "job_start": datetime.utcnow().isoformat(),
             "promoted": False
-        }}
+        }},
+        upsert=True
     )
     await ctx.send(f"✅ You are now working as a **{job_name.capitalize()}**!")
 
@@ -841,21 +871,28 @@ async def jobstatus(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
     user_data = await economy_col.find_one({"_id": user_id}) or {}
 
+    # Use job_start, not job_since
     job = user_data.get("job")
-    since = user_data.get("job_since")
+    job_start_str = user_data.get("job_start")
 
-    if not job or not since:
+    if not job or not job_start_str:
         return await ctx.send("💼 You don't currently have a job. Choose one with your server's prefix like `?choosejob`.")
 
-    since_dt = datetime.fromisoformat(since)
+    try:
+        # Parse ISO date string into datetime object
+        job_start = datetime.fromisoformat(job_start_str)
+    except Exception as e:
+        print(f"[jobstatus error] Failed to parse job_start: {e}")
+        return await ctx.send("⚠️ There was an error reading your job data. Please try again or contact support.")
+
     now = datetime.utcnow()
-    delta = now - since_dt
+    delta = now - job_start
 
     days = delta.days
     hours = delta.seconds // 3600
     minutes = (delta.seconds % 3600) // 60
 
-    eligible = "✅ Eligible for promotion!" if days >= 7 else f"❌ Not eligible yet (need {7 - days} more days)."
+    eligible = "✅ Eligible for promotion!" if days >= 7 else f"❌ Not eligible yet (need {7 - days} more day(s))."
 
     embed = discord.Embed(
         title=f"📋 Job Status for {ctx.author.display_name}",
@@ -1597,7 +1634,9 @@ async def cmds(ctx):
             ("?vanityroles @role #logchannel <status>", "Track users with keyword in status"),
             ("?promoters", "View users with the vanity role"),
             ("?resetpromoters", "Clear all users from the vanity role"),
-            ("?additem", "Add an item to the shop")
+            ("?additem <item_name> <price> <description>", "Add an item to the shop"),
+            ("?edititem <item_name> <new_price> <new_description>", "Edit an item in the shop"),
+            ("?delitem <item_name>", "Remove an item from the shop")
         ]:
             staff.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
