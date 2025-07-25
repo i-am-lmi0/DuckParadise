@@ -1031,6 +1031,9 @@ async def passive(ctx):
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)
 async def duckquiz(ctx):
+    if ctx.channel.id != 1370374735594258558:
+        return await ctx.send("❌ You can only use this command in <#1370374735594258558>.")
+
     USER = str(ctx.author.id)
     GUILD = str(ctx.guild.id)
     NUM_Q = 10
@@ -1040,7 +1043,6 @@ async def duckquiz(ctx):
     if not questions:
         return await ctx.send("⚠️ No quiz questions found.")
 
-    # Check if user passed before
     user_data = await quiz_col.find_one({"guild": GUILD, "user": USER, "passed": True})
     if user_data:
         try:
@@ -1052,7 +1054,6 @@ async def duckquiz(ctx):
         except (discord.Forbidden, asyncio.TimeoutError):
             return await ctx.send("❌ Couldn't DM you. Enable DMs from this server.")
 
-    # Get unused questions
     used_ids = await quiz_col.distinct("qid", {"guild": GUILD, "used": True})
     pool = [q for q in questions if q["id"] not in used_ids]
 
@@ -1466,12 +1467,12 @@ async def on_member_join(member):
         embed.set_footer(text=f"You are our {guild.member_count}th member!")
         msg = await welcome_ch.send(f"welcome, {member.mention} 🐥!", embed=embed)
 
-          # --- CUSTOM EMOJI REACTION ---
-          duck_emoji = discord.utils.get(guild.emojis, name="duckwave2")
-          if duck_emoji:
-              await msg.add_reaction(duck_emoji)
-          else:
-              print("Custom emoji 'duckwave2' not found in guild.")
+        # --- CUSTOM EMOJI REACTION ---
+        duck_emoji = discord.utils.get(guild.emojis, name="duckwave2")
+        if duck_emoji:
+            await msg.add_reaction(duck_emoji)
+        else:
+            print("Custom emoji 'duckwave2' not found in guild.")
 
     # BOOST ==========================
     if member.premium_since:
