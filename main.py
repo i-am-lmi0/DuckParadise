@@ -285,6 +285,95 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return await ctx.send("❌ That command doesn’t exist.")
     raise error
+    
+class AnswerButton(discord.ui.Button):
+    def __init__(self, label: str, value: int, parent_view):
+        super().__init__(style=discord.ButtonStyle.primary, label=label, custom_id=str(value))
+        self.value = value
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.parent_view.user_id:
+            return await interaction.response.send_message("This quiz isn't yours.", ephemeral=True)
+
+        if self.parent_view.answered_ids.get(self.parent_view.current_index):
+            return await interaction.response.send_message("You already answered this question.", ephemeral=True)
+
+        self.parent_view.answered_ids[self.parent_view.current_index] = True
+        correct_answer = self.parent_view.questions[self.parent_view.current_index]['answer']
+        if self.value == correct_answer:
+            self.parent_view.score += 1
+
+        # disable buttons
+        self.parent_view.disable_all_buttons()
+        await interaction.message.edit(view=self.parent_view)
+
+        reply_text = ("✅ Correct!" if self.value == correct_answer else
+                      f"❌ Wrong! Answer was: {self.parent_view.questions[self.parent_view.current_index]['options'][correct_answer-1]}")
+        await interaction.response.send_message(reply_text, ephemeral=True)
+
+        # move to next question after short delay
+        self.parent_view.current_index += 1
+        await self.parent_view.show_next(interaction)
+
+class QuizView(discord.ui.View):
+    def __init__(self, ctx, quiz_id, questions_list):
+        super().__init__(timeout=300)
+        self.ctx = ctx
+        self.user_id = ctx.author.id
+        self.quiz_id = quiz_id
+        self.questions = questions_list
+        self.current_index = 0
+        self.score = 0
+        self.answered_ids = {}
+        # add 4 buttons
+        for i in range(1, 5):
+            self.add_item(AnswerButton(str(i), i, self))
+
+    def disable_all_buttons(self):
+        for b in self.children:
+            b.disabled = True
+
+    async def show_next(self, interaction: discord.Interaction = None):
+        if self.current_index >= len(self.questions):
+            # quiz finished
+            await self.finish_quiz()
+            return
+
+        q = self.questions[self.current_index]
+        opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
+        embed = discord.Embed(
+            title=f"Question {self.current_index+1}/{len(self.questions)}",
+            description=q["q"],
+            color=discord.Color.teal()
+        )
+        embed.add_field(name="Options", value=opts, inline=False)
+        embed.set_footer(text="Press a button to answer.")
+
+        if interaction:
+            await interaction.followup.send(embed=embed, view=self, ephemeral=True)
+        else:
+            await self.ctx.send(embed=embed, view=self)
+
+    async def finish_quiz(self):
+        pct = self.score / len(self.questions) * 100.0
+        passed = pct >= PASS_PCT
+        # update DB record
+        await quiz_col.update_one(
+            {"_id": self.quiz_id},
+            {"$set": {"score": self.score, "completed": datetime.utcnow(), "passed": passed}}
+        )
+        # send result
+        content = f"📊 You scored **{self.score}/{len(self.questions)}** = **{pct:.1f}%**"
+        if passed:
+            role = self.ctx.guild.get_role(ROLE_ID)
+            if role:
+                await self.ctx.author.add_roles(role)
+                content += f"\n🎉 You passed and got the **{role.name}** role!"
+            else:
+                content += "\n⚠️ Could not assign role (missing)."
+        await self.ctx.send(content)
+        self.stop()
 
 # 3. COMMANDS =================================================
 @bot.command()
@@ -1034,43 +1123,35 @@ async def passive(ctx):
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)
 async def duckquiz(ctx):
-    if ctx.channel.id != 1370374735594258558:
-        return await ctx.send("❌ You can only use this command in <#1370374735594258558>.")
+    ROLE_ID = 1396526875987148982
+	QUIZ_CHANNEL = 1370374735594258558
+	NUM_Q = 10
+	PASS_PCT = 80.0
+    
+    if ctx.channel.id != QUIZ_CHANNEL:
+        return await ctx.send(f"❌ Please use this command in <#1370374735594258558>.")
 
     USER = str(ctx.author.id)
     GUILD = str(ctx.guild.id)
-    NUM_Q = 10
-    PASS_PCT = 80.0
-    ROLE_ID = 1396526875987148982
-
-    if not questions:
-        return await ctx.send("⚠️ No quiz questions found.")
-
-    # Check if passed before
-    user_data = await quiz_col.find_one({"guild": GUILD, "user": USER, "passed": True})
-    if user_data:
-        await ctx.send("ℹ You’ve already passed the Duck Quiz. Retake? Reply `yes` to continue.")
-
-        def check_msg(m):
-            return m.author == ctx.author and m.channel == ctx.channel
-
+    # check previous pass
+    rec = await quiz_col.find_one({"guild": GUILD, "user": USER, "passed": True})
+    if rec:
+        await ctx.send("ℹ You’ve already passed. Retake? Type `yes` in chat.")
         try:
-            msg = await bot.wait_for("message", timeout=30, check=check_msg)
-            if msg.content.lower() != "yes":
+            msg = await bot.wait_for("message", timeout=30, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
+            if msg.content.strip().lower() != "yes":
                 return await ctx.send("✅ Quiz cancelled.")
         except asyncio.TimeoutError:
-            return await ctx.send("⌛ Timed out! Quiz cancelled.")
+            return await ctx.send("⌛ Timed out—quiz cancelled.")
 
-    # Pull fresh questions
-    used_ids = await quiz_col.distinct("qid", {"guild": GUILD, "used": True})
-    pool = [q for q in questions if q["id"] not in used_ids]
-
+    # select new questions
+    used = await quiz_col.distinct("qid", {"guild": GUILD, "used": True})
+    pool = [q for q in questions if q["id"] not in used]
     if len(pool) < NUM_Q:
         await quiz_col.update_many({"guild": GUILD}, {"$unset": {"used": ""}})
         pool = questions.copy()
-
     selected = random.sample(pool, NUM_Q)
-
+    # mark used
     for q in selected:
         await quiz_col.update_one({"guild": GUILD, "qid": q["id"]}, {"$set": {"used": True}}, upsert=True)
 
@@ -1082,67 +1163,19 @@ async def duckquiz(ctx):
         "answers": {},
         "score": 0,
         "completed": None,
-        "passed": False
+        "passed": False,
     }
-    result = await quiz_col.insert_one(quiz_doc)
-    quiz_id = result.inserted_id
-
-    score = 0
-    for idx, q in enumerate(selected, start=1):
-        opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
-        embed = discord.Embed(
-            title=f"Question {idx}/{NUM_Q}",
-            description=q["q"],
-            color=discord.Color.teal()
-        )
-        embed.add_field(name="Options", value=opts)
-        await ctx.send(embed=embed)
-
-        def check_answer(m):
-            return m.author == ctx.author and m.channel == ctx.channel and m.content.isdigit()
-
-        try:
-            reply = await bot.wait_for("message", timeout=30, check=check_answer)
-            answer = int(reply.content)
-        except asyncio.TimeoutError:
-            await ctx.send("⏰ Skipped (no answer).")
-            continue
-
-        correct = (answer == q["answer"])
-        if correct:
-            score += 1
-            await ctx.send("✅ Correct!")
-        else:
-            correct_text = q["options"][q["answer"] - 1]
-            await ctx.send(f"❌ Incorrect! Correct answer was **{correct_text}**.")
-
-        await quiz_col.update_one({"_id": quiz_id}, {"$set": {f"answers.{q['id']}": answer}})
-
-    pct = score / NUM_Q * 100
-    passed = pct >= PASS_PCT
-
-    await quiz_col.update_one(
-        {"_id": quiz_id},
-        {"$set": {"score": score, "completed": datetime.utcnow(), "passed": passed}}
-    )
-
-    await ctx.send(f"📊 You scored **{score}/{NUM_Q}** = **{pct:.1f}%**")
-
-    if passed:
-        role = ctx.guild.get_role(ROLE_ID)
-        if role:
-            await ctx.author.add_roles(role)
-            await ctx.send(f"🎉 Congrats! You passed and received the **{role.name}** role.")
-        else:
-            await ctx.send("✅ You passed, but the role could not be found.")
+    res = await quiz_col.insert_one(quiz_doc)
+    view = QuizView(ctx, res.inserted_id, selected)
+    await view.show_next()
 
 @duckquiz.error
 async def duckquiz_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
         mins = int(error.retry_after // 60)
-        await ctx.send(f"🕒 Cooldown active. Try again in {mins} minute(s).")
+        await ctx.send(f"🕒 Please wait {mins} more minute(s) before doing the quiz again.")
     else:
-        await ctx.send("⚠️ An error occurred. Please try again.")
+        await ctx.send("⚠️ An error occurred—please try again.")
     
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
