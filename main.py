@@ -17,6 +17,7 @@ from pytz import UTC
 from collections import defaultdict
 import time
 from dateutil import parser
+from discord import ui
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -161,26 +162,6 @@ async def log_action(ctx, message, user_id=None, action_type=None):
     except Exception as e:
         print(f"[log_action ERROR] {e}")
 
-class CommandPages(View):
-    def __init__(self, embeds):
-        super().__init__(timeout=None)
-        self.embeds = embeds
-        self.index = 0
-        self.prev = Button(label="⏮️ Prev", style=ButtonStyle.secondary)
-        self.next = Button(label="⏭️ Next", style=ButtonStyle.secondary)
-        self.prev.callback = self.show_prev
-        self.next.callback = self.show_next
-        self.add_item(self.prev)
-        self.add_item(self.next)
-
-    async def show_prev(self, interaction: Interaction):
-        self.index = (self.index - 1) % len(self.embeds)
-        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
-
-    async def show_next(self, interaction: Interaction):
-        self.index = (self.index + 1) % len(self.embeds)
-        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
-
 @tasks.loop(minutes=1)
 async def check_expired_mutes():
     now = datetime.now(timezone.utc)
@@ -290,96 +271,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return await ctx.send("❌ That command doesn’t exist.")
     raise error
-    
-class AnswerButton(discord.ui.Button):
-    def __init__(self, label: str, value: int, parent_view):
-        super().__init__(style=discord.ButtonStyle.primary, label=label, custom_id=str(value))
-        self.value = value
-        self.parent_view = parent_view
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.parent_view.user_id:
-            return await interaction.response.send_message("This quiz isn't yours.", ephemeral=True)
-
-        if self.parent_view.answered_ids.get(self.parent_view.current_index):
-            return await interaction.response.send_message("You already answered this question.", ephemeral=True)
-
-        self.parent_view.answered_ids[self.parent_view.current_index] = True
-        correct_answer = self.parent_view.questions[self.parent_view.current_index]['answer']
-        if self.value == correct_answer:
-            self.parent_view.score += 1
-
-        # disable buttons
-        self.parent_view.disable_all_buttons()
-        await interaction.message.edit(view=self.parent_view)
-
-        reply_text = ("✅ Correct!" if self.value == correct_answer else
-                      f"❌ Wrong! Answer was: {self.parent_view.questions[self.parent_view.current_index]['options'][correct_answer-1]}")
-        await interaction.response.send_message(reply_text, ephemeral=True)
-
-        # move to next question after short delay
-        self.parent_view.current_index += 1
-        await self.parent_view.show_next(interaction)
-
-class QuizView(discord.ui.View):
-    def __init__(self, ctx, quiz_id, questions_list):
-        super().__init__(timeout=300)
-        self.ctx = ctx
-        self.user_id = ctx.author.id
-        self.quiz_id = quiz_id
-        self.questions = questions_list
-        self.current_index = 0
-        self.score = 0
-        self.answered_ids = {}
-        # add 4 buttons
-        for i in range(1, 5):
-            self.add_item(AnswerButton(str(i), i, self))
-
-    def disable_all_buttons(self):
-        for b in self.children:
-            b.disabled = True
-
-    async def show_next(self, interaction: discord.Interaction = None):
-        if self.current_index >= len(self.questions):
-            # quiz finished
-            await self.finish_quiz()
-            return
-
-        q = self.questions[self.current_index]
-        opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
-        embed = discord.Embed(
-            title=f"Question {self.current_index+1}/{len(self.questions)}",
-            description=q["q"],
-            color=discord.Color.teal()
-        )
-        embed.add_field(name="Options", value=opts, inline=False)
-        embed.set_footer(text="Press a button to answer.")
-
-        if interaction:
-            await interaction.followup.send(embed=embed, view=self, ephemeral=True)
-        else:
-            await self.ctx.send(embed=embed, view=self)
-
-    async def finish_quiz(self):
-        pct = self.score / len(self.questions) * 100.0
-        passed = pct >= PASS_PCT
-        # update DB record
-        await quiz_col.update_one(
-            {"_id": self.quiz_id},
-            {"$set": {"score": self.score, "completed": datetime.utcnow(), "passed": passed}}
-        )
-        # send result
-        content = f"📊 You scored **{self.score}/{len(self.questions)}** = **{pct:.1f}%**"
-        if passed:
-            role = self.ctx.guild.get_role(ROLE_ID)
-            if role:
-                await self.ctx.author.add_roles(role)
-                content += f"\n🎉 You passed and got the **{role.name}** role!"
-            else:
-                content += "\n⚠️ Could not assign role (missing)."
-        await self.ctx.send(content)
-        self.stop()
-
+        
 # 3. COMMANDS =================================================
 @bot.command()
 async def staffset(ctx, role: discord.Role):
@@ -607,38 +499,58 @@ async def beg(ctx):
     await ctx.send(f"🙇 {donor} was kind enough to donate **{amount} coins** to you!")
     
 @bot.command(aliases=["dep"])
-async def deposit(ctx, amount: int):
+async def deposit(ctx, amount: str):
     data = await get_user(ctx.guild.id, ctx.author.id)
-    if amount <= 0:
-        return await ctx.send("❌ Invalid deposit amount.")
-    if amount > data["wallet"]:
-        return await ctx.send("❌ You can't afford that!")
+    wallet = data["wallet"]
+
+    if amount.lower() == "all":
+        if wallet <= 0:
+            return await ctx.send("❌ You have no coins to deposit.")
+        deposit_amount = wallet
+    elif amount.isdigit():
+        deposit_amount = int(amount)
+        if deposit_amount <= 0:
+            return await ctx.send("❌ Invalid deposit amount.")
+        if deposit_amount > wallet:
+            return await ctx.send("❌ You can't afford that!")
+    else:
+        return await ctx.send("❌ Please enter a valid number or `all`.")
 
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {
-            "wallet": data["wallet"] - amount,
-            "bank": data["bank"] + amount
+            "wallet": wallet - deposit_amount,
+            "bank": data["bank"] + deposit_amount
         }}
     )
-    await ctx.send(f"🏦 You deposited {amount} coins.")
+    await ctx.send(f"🏦 You deposited {deposit_amount} coins.")
     
 @bot.command(aliases=["with"])
-async def withdraw(ctx, amount: int):
+async def withdraw(ctx, amount: str):
     data = await get_user(ctx.guild.id, ctx.author.id)
-    if amount <= 0:
-        return await ctx.send("❌ Invalid withdrawal amount.")
-    if amount > data["bank"]:
-        return await ctx.send("❌ You can't afford that")
+    bank = data["bank"]
+
+    if amount.lower() == "all":
+        if bank <= 0:
+            return await ctx.send("❌ You have no coins to withdraw.")
+        withdraw_amount = bank
+    elif amount.isdigit():
+        withdraw_amount = int(amount)
+        if withdraw_amount <= 0:
+            return await ctx.send("❌ Invalid withdrawal amount.")
+        if withdraw_amount > bank:
+            return await ctx.send("❌ You can't afford that")
+    else:
+        return await ctx.send("❌ Please enter a valid number or `all`.")
 
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {
-            "wallet": data["wallet"] + amount,
-            "bank": data["bank"] - amount
+            "wallet": data["wallet"] + withdraw_amount,
+            "bank": bank - withdraw_amount
         }}
     )
-    await ctx.send(f"💰 You withdrew {amount} coins.")
+    await ctx.send(f"💰 You withdrew {withdraw_amount} coins.")
     
 @bot.command()
 async def shop(ctx):
@@ -794,20 +706,27 @@ async def coinflip(ctx, amount: int):
         await ctx.send(f"💸 You lost {amount} coins from flipping a coin.")
 
 @bot.command()
-@commands.cooldown(1, 3600, commands.BucketType.user)  # 1 ticket/hour
 async def lottery(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
     data = await get_user(ctx.guild.id, ctx.author.id)
+    now = datetime.utcnow()
 
-    ticket_price = 500
+    # Check cooldown from Mongo
+    last_time = data.get("last_lottery")
+    if last_time:
+        last_dt = datetime.fromisoformat(last_time)
+        if now - last_dt < timedelta(hours=1):
+            rem = timedelta(hours=1) - (now - last_dt)
+            return await ctx.send(f"🕒 You can try the lottery again in {rem.seconds // 60}m {rem.seconds % 60}s.")
+
+    ticket_price = 300
     jackpot = random.randint(5000, 10000)
-    chance = 0.01  # 1% chance to win
+    chance = 0.01
 
     if data["wallet"] < ticket_price:
         return await ctx.send("🎟️ You need at least 300 coins to buy a lottery ticket.")
 
     data["wallet"] -= ticket_price
-
     win = random.random() <= chance
     if win:
         data["wallet"] += jackpot
@@ -817,7 +736,7 @@ async def lottery(ctx):
 
     await economy_col.update_one(
         {"_id": user_id},
-        {"$set": {"wallet": data["wallet"]}}
+        {"$set": {"wallet": data["wallet"], "last_lottery": now.isoformat()}}
     )
     
 @lottery.error
@@ -829,18 +748,25 @@ async def lottery_error(ctx, error):
         return await ctx.send(f"🕒 Try again in {mins}m {secs}s.")
     
 @bot.command(aliases=["mbox", "box"])
-@commands.cooldown(1, 3600, commands.BucketType.user)  # 1 box per hour
 async def mysterybox(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
     data = await get_user(ctx.guild.id, ctx.author.id)
+    now = datetime.utcnow()
 
-    box_price = 250
-    if data["wallet"] < box_price:
+    # Cooldown check
+    last_time = data.get("last_mysterybox")
+    if last_time:
+        last_dt = datetime.fromisoformat(last_time)
+        if now - last_dt < timedelta(hours=1):
+            rem = timedelta(hours=1) - (now - last_dt)
+            return await ctx.send(f"🕒 You can open another Mystery Box in {rem.seconds // 60}m {rem.seconds % 60}s.")
+
+    price = 250
+    if data["wallet"] < price:
         return await ctx.send("❌ You need 250 coins to open a Mystery Box.")
 
-    data["wallet"] -= box_price
+    data["wallet"] -= price
 
-    # Rewards with probabilities
     rewards = [
         {"type": "garbage", "desc": "you found a half-empty bottle 🍼", "chance": 0.3},
         {"type": "garbage", "desc": "you fished out some leftover pizza 🍕", "chance": 0.25},
@@ -852,54 +778,62 @@ async def mysterybox(ctx):
         {"type": "item", "name": "gold badge", "desc": "🏅 You got a rare Gold Badge!", "chance": 0.02},
     ]
 
-    choices = [r for r in rewards]
-    weights = [r["chance"] for r in rewards]
-    reward = random.choices(choices, weights=weights, k=1)[0]
-
-    result_msg = reward["desc"]
+    reward = random.choices(rewards, weights=[r["chance"] for r in rewards])[0]
+    msg = reward["desc"]
     if reward["type"] == "coins":
         data["wallet"] += reward["amount"]
     elif reward["type"] == "item":
         data.setdefault("inventory", []).append(reward["name"])
-    # garbage: no value, just fun
 
     await economy_col.update_one(
         {"_id": user_id},
-        {"$set": {"wallet": data["wallet"], "inventory": data["inventory"]}}
+        {"$set": {
+            "wallet": data["wallet"],
+            "inventory": data["inventory"],
+            "last_mysterybox": now.isoformat()
+        }}
     )
 
-    await ctx.send(f"🎁 {result_msg}")
-    
-from datetime import datetime
+    await ctx.send(f"🎁 {msg}")
 
-@bot.command()
-async def choosejob(ctx, *, job_name: str = None):
-    # Get server prefix
-    doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
-    prefix = doc.get("prefix", "?") if doc else "?"
+class JobPicker(ui.View):
+    def __init__(self, ctx):
+        super().__init__(timeout=30)
+        self.ctx = ctx
 
-    jobs = {
-        "developer": "Work for theofficialtruck as their assistant developer 🧑‍💻",
-        "duck": "Work for CuteBatak as their official duck 🦆"
-    }
+    async def interaction_check(self, interaction):
+        return interaction.user == self.ctx.author
 
-    if not job_name or job_name.lower() not in jobs:
-        return await ctx.send(
-            f"❌ Invalid job. Choose one with `{prefix}choosejob`:\n" +
-            "\n".join(f"**{k}**: {v}" for k, v in jobs.items())
+    @ui.button(label="Developer 🧑‍💻", style=discord.ButtonStyle.blurple)
+    async def dev_button(self, interaction: discord.Interaction, button: ui.Button):
+        await self.set_job(interaction, "developer")
+
+    @ui.button(label="Duck 🦆", style=discord.ButtonStyle.green)
+    async def duck_button(self, interaction: discord.Interaction, button: ui.Button):
+        await self.set_job(interaction, "duck")
+
+    async def set_job(self, interaction, job_name):
+        await economy_col.update_one(
+            {"_id": f"{self.ctx.guild.id}-{self.ctx.author.id}"},
+            {"$set": {
+                "job": job_name,
+                "job_start": datetime.utcnow().isoformat(),
+                "promoted": False
+            }},
+            upsert=True
+        )
+        await interaction.response.edit_message(
+            content=f"✅ You are now working as a **{job_name.capitalize()}**!",
+            view=None
         )
 
-    job_name = job_name.lower()
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {
-            "job": job.lower(),
-            "job_start": datetime.utcnow().isoformat(),
-            "promoted": False
-        }},
-        upsert=True
+@bot.command()
+async def choosejob(ctx):
+    view = JobPicker(ctx)
+    await ctx.send(
+        "💼 Choose your job by clicking one of the buttons below:",
+        view=view
     )
-    await ctx.send(f"✅ You are now working as a **{job_name.capitalize()}**!")
 
 @bot.command()
 @commands.cooldown(1, 43200, commands.BucketType.user)  # 12-hour cooldown
@@ -1124,6 +1058,95 @@ async def passive(ctx):
         upsert=True
     )
     await ctx.send("🛡️ Passive mode enabled for 24 hours — you can't rob or be robbed.")
+
+class AnswerButton(discord.ui.Button):
+    def __init__(self, label: str, value: int, parent_view):
+        super().__init__(style=discord.ButtonStyle.primary, label=label, custom_id=str(value))
+        self.value = value
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.parent_view.user_id:
+            return await interaction.response.send_message("This quiz isn't yours.", ephemeral=True)
+
+        if self.parent_view.answered_ids.get(self.parent_view.current_index):
+            return await interaction.response.send_message("You already answered this question.", ephemeral=True)
+
+        self.parent_view.answered_ids[self.parent_view.current_index] = True
+        correct_answer = self.parent_view.questions[self.parent_view.current_index]['answer']
+        if self.value == correct_answer:
+            self.parent_view.score += 1
+
+        # disable buttons
+        self.parent_view.disable_all_buttons()
+        await interaction.message.edit(view=self.parent_view)
+
+        reply_text = ("✅ Correct!" if self.value == correct_answer else
+                      f"❌ Wrong! Answer was: {self.parent_view.questions[self.parent_view.current_index]['options'][correct_answer-1]}")
+        await interaction.response.send_message(reply_text, ephemeral=True)
+
+        # move to next question after short delay
+        self.parent_view.current_index += 1
+        await self.parent_view.show_next(interaction)
+
+class QuizView(discord.ui.View):
+    def __init__(self, ctx, quiz_id, questions_list):
+        super().__init__(timeout=300)
+        self.ctx = ctx
+        self.user_id = ctx.author.id
+        self.quiz_id = quiz_id
+        self.questions = questions_list
+        self.current_index = 0
+        self.score = 0
+        self.answered_ids = {}
+        # add 4 buttons
+        for i in range(1, 5):
+            self.add_item(AnswerButton(str(i), i, self))
+
+    def disable_all_buttons(self):
+        for b in self.children:
+            b.disabled = True
+
+    async def show_next(self, interaction: discord.Interaction = None):
+        if self.current_index >= len(self.questions):
+            # quiz finished
+            await self.finish_quiz()
+            return
+
+        q = self.questions[self.current_index]
+        opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
+        embed = discord.Embed(
+            title=f"Question {self.current_index+1}/{len(self.questions)}",
+            description=q["q"],
+            color=discord.Color.teal()
+        )
+        embed.add_field(name="Options", value=opts, inline=False)
+        embed.set_footer(text="Press a button to answer.")
+
+        if interaction:
+            await interaction.followup.send(embed=embed, view=self, ephemeral=True)
+        else:
+            await self.ctx.send(embed=embed, view=self)
+
+    async def finish_quiz(self):
+        pct = self.score / len(self.questions) * 100.0
+        passed = pct >= PASS_PCT
+        # update DB record
+        await quiz_col.update_one(
+            {"_id": self.quiz_id},
+            {"$set": {"score": self.score, "completed": datetime.utcnow(), "passed": passed}}
+        )
+        # send result
+        content = f"📊 You scored **{self.score}/{len(self.questions)}** = **{pct:.1f}%**"
+        if passed:
+            role = self.ctx.guild.get_role(ROLE_ID)
+            if role:
+                await self.ctx.author.add_roles(role)
+                content += f"\n🎉 You passed and got the **{role.name}** role!"
+            else:
+                content += "\n⚠️ Could not assign role (missing)."
+        await self.ctx.send(content)
+        self.stop()
 
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)
@@ -1591,6 +1614,26 @@ async def pun(ctx):
 @bot.command()
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
+
+class CommandPages(View):
+    def __init__(self, embeds):
+        super().__init__(timeout=None)
+        self.embeds = embeds
+        self.index = 0
+        self.prev = Button(label="⏮️ Prev", style=ButtonStyle.secondary)
+        self.next = Button(label="⏭️ Next", style=ButtonStyle.secondary)
+        self.prev.callback = self.show_prev
+        self.next.callback = self.show_next
+        self.add_item(self.prev)
+        self.add_item(self.next)
+
+    async def show_prev(self, interaction: Interaction):
+        self.index = (self.index - 1) % len(self.embeds)
+        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+
+    async def show_next(self, interaction: Interaction):
+        self.index = (self.index + 1) % len(self.embeds)
+        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
 
 bot.remove_command("help")
 @bot.command(aliases=["help"])
