@@ -69,6 +69,10 @@ bot_locks = {}
 
 @bot.check
 async def global_lock_check(ctx):
+    # Always allow the override command to run
+    if ctx.command.name == "override":
+        return True
+
     if bot_locks.get(str(ctx.guild.id)):
         await ctx.send("🔒 The bot is locked — only `override` by theofficialtruck works.")
         return False
@@ -673,7 +677,6 @@ async def leaderboard(ctx):
     await ctx.send(embed=embed)
     
 @bot.command(aliases=["cf"])
-@commands.cooldown(1, 60, commands.BucketType.user)
 async def coinflip(ctx, amount: int):
     data = await get_user(ctx.guild.id, ctx.author.id)
 
@@ -695,12 +698,6 @@ async def coinflip(ctx, amount: int):
         await ctx.send(f"🎉 You won {amount} coins from flipping a coin!")
     else:
         await ctx.send(f"💸 You lost {amount} coins from flipping a coin.")
-        
-@coinflip.error
-async def coinflip_error(ctx, error):
-    if isinstance(error, commands.CommandOnCooldown):
-        secs = int(error.retry_after)
-        await ctx.send(f"🕒 Coinflip cooldown: try again in {secs}s.")
 
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)  # 1 ticket/hour
@@ -1049,17 +1046,22 @@ async def duckquiz(ctx):
     if not questions:
         return await ctx.send("⚠️ No quiz questions found.")
 
+    # Check if passed before
     user_data = await quiz_col.find_one({"guild": GUILD, "user": USER, "passed": True})
     if user_data:
-        try:
-            dm = await ctx.author.create_dm()
-            await dm.send("ℹ You’ve already passed the Duck Quiz. Retake? Reply `yes` to continue.")
-            msg = await bot.wait_for("message", timeout=30, check=lambda m: m.author == ctx.author and isinstance(m.channel, discord.DMChannel))
-            if msg.content.strip().lower() != "yes":
-                return await ctx.send("✅ Quiz cancelled.")
-        except (discord.Forbidden, asyncio.TimeoutError):
-            return await ctx.send("❌ Couldn't DM you. Enable DMs from this server.")
+        await ctx.send("ℹ You’ve already passed the Duck Quiz. Retake? Reply `yes` to continue.")
 
+        def check_msg(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+
+        try:
+            msg = await bot.wait_for("message", timeout=30, check=check_msg)
+            if msg.content.lower() != "yes":
+                return await ctx.send("✅ Quiz cancelled.")
+        except asyncio.TimeoutError:
+            return await ctx.send("⌛ Timed out! Quiz cancelled.")
+
+    # Pull fresh questions
     used_ids = await quiz_col.distinct("qid", {"guild": GUILD, "used": True})
     pool = [q for q in questions if q["id"] not in used_ids]
 
@@ -1085,62 +1087,54 @@ async def duckquiz(ctx):
     result = await quiz_col.insert_one(quiz_doc)
     quiz_id = result.inserted_id
 
-    try:
-        dm = await ctx.author.create_dm()
-        score = 0
-        for idx, q in enumerate(selected, start=1):
-            opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
-            embed = discord.Embed(
-                title=f"Question {idx}/{NUM_Q}",
-                description=q["q"],
-                color=discord.Color.teal()
-            )
-            embed.add_field(name="Options", value=opts, inline=False)
-            await dm.send(embed=embed)
-
-            def check(m): return m.author == ctx.author and isinstance(m.channel, discord.DMChannel) and m.content.isdigit()
-
-            try:
-                reply = await bot.wait_for("message", timeout=30, check=check)
-                answer = int(reply.content)
-            except asyncio.TimeoutError:
-                await dm.send("⏰ Skipped (no answer).")
-                continue
-
-            correct = (answer == q["answer"])
-            if correct:
-                score += 1
-                await dm.send("✅ Correct!")
-            else:
-                correct_text = q["options"][q["answer"] - 1]
-                await dm.send(f"❌ Incorrect! The correct answer was **{correct_text}**.")
-
-            await quiz_col.update_one(
-                {"_id": quiz_id},
-                {"$set": {f"answers.{q['id']}": answer}}
-            )
-
-        pct = (score / NUM_Q) * 100
-        passed = pct >= PASS_PCT
-
-        await quiz_col.update_one(
-            {"_id": quiz_id},
-            {"$set": {"score": score, "completed": datetime.utcnow(), "passed": passed}}
+    score = 0
+    for idx, q in enumerate(selected, start=1):
+        opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
+        embed = discord.Embed(
+            title=f"Question {idx}/{NUM_Q}",
+            description=q["q"],
+            color=discord.Color.teal()
         )
+        embed.add_field(name="Options", value=opts)
+        await ctx.send(embed=embed)
 
-        await dm.send(f"📊 You scored **{score}/{NUM_Q}** = **{pct:.1f}%**")
+        def check_answer(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content.isdigit()
 
-        if passed:
-            role = ctx.guild.get_role(ROLE_ID)
-            if role:
-                await ctx.author.add_roles(role)
-                await dm.send(f"🎉 Congrats! You passed and got the **{role.name}** role.")
-            else:
-                await dm.send("✅ You passed, but the role couldn't be found.")
-    except discord.Forbidden:
-        return await ctx.send("❌ I couldn't DM you! Please enable DMs from this server.")
+        try:
+            reply = await bot.wait_for("message", timeout=30, check=check_answer)
+            answer = int(reply.content)
+        except asyncio.TimeoutError:
+            await ctx.send("⏰ Skipped (no answer).")
+            continue
 
-    await ctx.send("✅ The quiz has been sent to your DMs!")
+        correct = (answer == q["answer"])
+        if correct:
+            score += 1
+            await ctx.send("✅ Correct!")
+        else:
+            correct_text = q["options"][q["answer"] - 1]
+            await ctx.send(f"❌ Incorrect! Correct answer was **{correct_text}**.")
+
+        await quiz_col.update_one({"_id": quiz_id}, {"$set": {f"answers.{q['id']}": answer}})
+
+    pct = score / NUM_Q * 100
+    passed = pct >= PASS_PCT
+
+    await quiz_col.update_one(
+        {"_id": quiz_id},
+        {"$set": {"score": score, "completed": datetime.utcnow(), "passed": passed}}
+    )
+
+    await ctx.send(f"📊 You scored **{score}/{NUM_Q}** = **{pct:.1f}%**")
+
+    if passed:
+        role = ctx.guild.get_role(ROLE_ID)
+        if role:
+            await ctx.author.add_roles(role)
+            await ctx.send(f"🎉 Congrats! You passed and received the **{role.name}** role.")
+        else:
+            await ctx.send("✅ You passed, but the role could not be found.")
 
 @duckquiz.error
 async def duckquiz_error(ctx, error):
