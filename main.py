@@ -37,7 +37,7 @@ quiz_col = db['quiz']
 
 print("Top of main.py reached")
 
-fishes = [ # for economy game
+fishes = [            # for economy game
     ("🦐 Shrimp", 100),
     ("🐟 Fish", 200),
     ("🐠 Tropical Fish", 300),
@@ -46,6 +46,11 @@ fishes = [ # for economy game
 ]
 
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
+
+ROLE_ID = 1396526875987148982      # for the .duckquiz
+QUIZ_CHANNEL = 1370374735594258558
+NUM_Q = 10
+PASS_PCT = 80.0
 
 intents = discord.Intents.all()
 
@@ -1123,10 +1128,6 @@ async def passive(ctx):
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)
 async def duckquiz(ctx):
-    ROLE_ID = 1396526875987148982
-	QUIZ_CHANNEL = 1370374735594258558
-	NUM_Q = 10
-	PASS_PCT = 80.0
     
     if ctx.channel.id != QUIZ_CHANNEL:
         return await ctx.send(f"❌ Please use this command in <#1370374735594258558>.")
