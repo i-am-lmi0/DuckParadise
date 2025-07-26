@@ -275,7 +275,13 @@ async def on_message(message):
 
     await bot.process_commands(message)
     await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
-        
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return await ctx.send("❌ That command doesn’t exist.")
+    raise error
+
 # 3. COMMANDS =================================================
 @bot.command()
 async def staffset(ctx, role: discord.Role):
@@ -494,7 +500,7 @@ async def beg(ctx):
         return await ctx.send(f"🕒 You can beg again in {rem.seconds // 60} minutes.")
 
     amount = random.randint(50, 200)
-    donor = random.choice(["TheTruck", "CuteBatak"])
+    donor = random.choice(["thetruck", "CuteBatak"])
 
     await economy_col.update_one(
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
