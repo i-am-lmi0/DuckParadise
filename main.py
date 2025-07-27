@@ -705,6 +705,13 @@ async def coinflip(ctx, amount: int):
     else:
         await ctx.send(f"💸 You lost {amount} coins from flipping a coin.")
 
+@coinflip.error
+async def coinflip_error(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("❌ You must specify an amount. Example: `.coinflip 100`")
+    else:
+        await ctx.send(f"⚠️ Error: {type(error).__name__}: {error}")
+
 @bot.command()
 async def lottery(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
