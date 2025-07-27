@@ -984,7 +984,6 @@ async def fish_error(ctx, error):
         await ctx.send(f"🕒 You can fish again in {round(error.retry_after / 3600, 2)} hours.")
 
 @bot.command(aliases=["steal"])
-@commands.cooldown(1, 10800, commands.BucketType.user)  # 3 hour cooldown for robber
 async def rob(ctx, member: discord.Member):
     if member == ctx.author:
         return await ctx.send("❌ You can't rob yourself!")
@@ -996,7 +995,16 @@ async def rob(ctx, member: discord.Member):
     r_doc = await economy_col.find_one({"_id": robber_id}) or {}
     v_doc = await economy_col.find_one({"_id": victim_id}) or {}
 
-    # Check passive modes
+    # Check cooldown from Mongo
+    cooldown = r_doc.get("rob_cooldown")
+    if cooldown:
+        cooldown_dt = datetime.fromisoformat(cooldown)
+        if now < cooldown_dt:
+            remaining = cooldown_dt - now
+            mins = int(remaining.total_seconds() // 60)
+            return await ctx.send(f"🕒 You can rob again in {mins} minute(s).")
+
+    # Passive mode checks
     if r_doc.get("passive_until"):
         until = datetime.fromisoformat(r_doc["passive_until"])
         if until > now:
@@ -1006,7 +1014,7 @@ async def rob(ctx, member: discord.Member):
         if until > now:
             return await ctx.send("🔒 That user has passive mode enabled — you can't rob them.")
 
-    # Victim rob cooldown
+    # Victim rob cooldown (1h protection)
     last_robbed = v_doc.get("last_robbed")
     if last_robbed:
         if isinstance(last_robbed, str):
@@ -1022,28 +1030,26 @@ async def rob(ctx, member: discord.Member):
     if v_doc.get("wallet", 0) < 300:
         return await ctx.send("❌ They don’t have enough coins to rob.")
 
-    # Robbery logic
+    # Robbery success
     amount = random.randint(100, min(500, v_doc["wallet"], r_doc["wallet"]))
     r_doc["wallet"] += amount
     v_doc["wallet"] -= amount
 
-    await economy_col.update_one({"_id": robber_id}, {"$set": {"wallet": r_doc["wallet"]}})
+    await economy_col.update_one({"_id": robber_id}, {
+        "$set": {
+            "wallet": r_doc["wallet"],
+            "rob_cooldown": (now + timedelta(hours=3)).isoformat()
+        }
+    })
+
     await economy_col.update_one({"_id": victim_id}, {
         "$set": {
             "wallet": v_doc["wallet"],
-            "last_robbed": now
+            "last_robbed": now.isoformat()
         }
     })
 
     await ctx.send(f"💰 You robbed {member.display_name} and stole {amount} coins!")
-    
-@rob.error
-async def rob_error(ctx, error):
-    if isinstance(error, commands.CommandOnCooldown):
-        rem = timedelta(seconds=error.retry_after)
-        hours = rem.seconds // 3600
-        mins = (rem.seconds % 3600) // 60
-        return await ctx.send(f"🕒 You can rob again in {hours}h {mins}m.")
     
 @bot.command()
 async def passive(ctx):
