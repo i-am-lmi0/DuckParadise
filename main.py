@@ -1144,7 +1144,32 @@ class QuizView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=self)
         else:
             await self.ctx.send(embed=embed, view=self)
-
+            
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.parent_view.user_id:
+            return await interaction.response.send_message("This quiz isn't yours.", ephemeral=True)
+    
+        if self.parent_view.answered_ids.get(self.parent_view.current_index):
+            return await interaction.response.send_message("You already answered this question.", ephemeral=True)
+    
+        self.parent_view.answered_ids[self.parent_view.current_index] = True
+        correct_answer = self.parent_view.questions[self.parent_view.current_index]['answer']
+        if self.value == correct_answer:
+            self.parent_view.score += 1
+    
+        await interaction.response.defer(ephemeral=True)
+    
+        self.parent_view.disable_all_buttons()
+    
+        await interaction.edit_original_response(view=self.parent_view)
+    
+        reply_text = ("✅ Correct!" if self.value == correct_answer else
+                      f"❌ Wrong! Answer was: {self.parent_view.questions[self.parent_view.current_index]['options'][correct_answer-1]}")
+        await interaction.followup.send(reply_text, ephemeral=True)
+    
+        self.parent_view.current_index += 1
+        await self.parent_view.show_next(interaction)
+    
     async def finish_quiz(self):
         pct = self.score / len(self.questions) * 100.0
         passed = pct >= PASS_PCT
