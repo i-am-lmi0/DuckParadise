@@ -1158,9 +1158,7 @@ class QuizView(discord.ui.View):
             self.parent_view.score += 1
     
         await interaction.response.defer(ephemeral=True)
-    
         self.parent_view.disable_all_buttons()
-    
         await interaction.edit_original_response(view=self.parent_view)
     
         reply_text = ("✅ Correct!" if self.value == correct_answer else
