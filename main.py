@@ -98,6 +98,17 @@ def staff_only():
         role = discord.utils.get(ctx.guild.roles, id=settings["staff_role"])
         return bool(role and role in ctx.author.roles)
     return commands.check(predicate)
+    
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        return await ctx.send("❌ You don't have permission to use this command.")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        return await ctx.send("⚠️ Missing arguments for this command.")
+    elif isinstance(error, commands.CommandNotFound):
+        return await ctx.send("⚠️ That command doesn't exist.")
+    else:
+        print(f"Unexpected error: {error}")
 
 async def get_user(guild_id, user_id):
     key = f"{guild_id}-{user_id}"
@@ -265,12 +276,6 @@ async def on_message(message):
 
     await bot.process_commands(message)
     await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
-
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        return await ctx.send("❌ That command doesn’t exist.")
-    raise error
         
 # 3. COMMANDS =================================================
 @bot.command()
