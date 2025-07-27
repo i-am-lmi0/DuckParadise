@@ -1121,11 +1121,12 @@ class QuizView(discord.ui.View):
             b.disabled = True
 
     async def show_next(self, interaction: discord.Interaction = None):
+        self.clear_items()  # Clear old buttons
+    
         if self.current_index >= len(self.questions):
-            # quiz finished
             await self.finish_quiz()
             return
-
+    
         q = self.questions[self.current_index]
         opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
         embed = discord.Embed(
@@ -1133,11 +1134,14 @@ class QuizView(discord.ui.View):
             description=q["q"],
             color=discord.Color.teal()
         )
-        embed.add_field(name="Options", value=opts, inline=False)
         embed.set_footer(text="Press a button to answer.")
-
+        embed.add_field(name="Options", value=opts, inline=False)
+    
+        for i in range(1, 5):
+            self.add_item(AnswerButton(str(i), i, self))
+    
         if interaction:
-            await interaction.followup.send(embed=embed, view=self, ephemeral=True)
+            await interaction.edit_original_response(embed=embed, view=self)
         else:
             await self.ctx.send(embed=embed, view=self)
 
