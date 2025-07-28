@@ -1149,7 +1149,7 @@ class QuizView(discord.ui.View):
 
     async def show_next(self, interaction: discord.Interaction = None):
         if self.current_index >= len(self.questions):
-            await self.finish_quiz()
+            await self.finish_quiz(interaction)
             return
 
         q = self.questions[self.current_index]
@@ -1172,25 +1172,36 @@ class QuizView(discord.ui.View):
         else:
             await self.ctx.send(embed=embed, view=self, ephemeral=True)
 
-    async def finish_quiz(self):
-        pct = (self.score / len(self.questions)) * 100.0
+    async def finish_quiz(self, interaction: discord.Interaction = None):
+        pct = self.score / len(self.questions) * 100.0
         passed = pct >= PASS_PCT
-
+    
+        # update DB record
         await quiz_col.update_one(
             {"_id": self.quiz_id},
-            {"$set": {"score": self.score, "completed": datetime.utcnow(), "passed": passed}}
+            {"$set": {
+                "score": self.score,
+                "completed": datetime.utcnow(),
+                "passed": passed
+            }}
         )
-
-        result_msg = f"📊 You scored **{self.score}/{len(self.questions)}** = **{pct:.1f}%**"
+    
+        # Create result message
+        result = f"📊 You scored **{self.score}/{len(self.questions)}** = **{pct:.1f}%**"
         if passed:
             role = self.ctx.guild.get_role(ROLE_ID)
             if role:
                 await self.ctx.author.add_roles(role)
-                result_msg += f"\n🎉 You passed and got the **{role.name}** role!"
+                result += f"\n🎉 You passed and got the **{role.name}** role!"
             else:
-                result_msg += "\n⚠️ Role exists in code but isn’t found on server."
-
-        await self.ctx.send(result_msg)
+                result += "\n⚠️ Role not found to assign."
+    
+        # Send result ephemerally
+        if interaction:
+            await interaction.followup.send(content=result, ephemeral=True)
+        else:
+            await self.ctx.send(content=result)
+    
         self.stop()
 
 @bot.command()
