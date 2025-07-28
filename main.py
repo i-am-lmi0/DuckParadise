@@ -218,13 +218,19 @@ async def on_ready():
         ]
         await shop_col.insert_many(initial_items)
         print("✅ Shop items added.")
-        
+
 async def ask_duck_gpt(prompt: str) -> str:
-    url = "https://pawan.krishna.api.stdlib.com/gpt3@1.0.0/"
-    headers = {"Authorization": f"Bearer {PAWAN_API_KEY}"}
+    url = "https://api.pawan.krd/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {PAWAN_API_KEY}",
+        "Content-Type": "application/json"
+    }
     data = {
-        "prompt": f"You're a smart duck that replies in a funny and helpful duck-themed way. {prompt}",
-        "model": "gpt-3.5-turbo",
+        "model": "pai-001",
+        "messages": [
+            {"role": "system", "content": "You are a smart duck that replies in a funny and helpful duck-themed way."},
+            {"role": "user", "content": prompt}
+        ],
         "temperature": 0.7,
         "max_tokens": 100
     }
@@ -232,7 +238,7 @@ async def ask_duck_gpt(prompt: str) -> str:
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=data) as resp:
             result = await resp.json()
-            return result.get("choices", [{}])[0].get("text", "Quack?")
+            return result.get("choices", [{}])[0].get("message", {}).get("content", "Quack?")
     
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
