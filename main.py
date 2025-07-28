@@ -220,25 +220,38 @@ async def on_ready():
         print("✅ Shop items added.")
 
 async def ask_duck_gpt(prompt: str) -> str:
-    url = "https://api.pawan.krd/v1/chat/completions"
+    url = "https://api.pawan.krd/v1/chat/completions"  # or "/cosmosrp/v1/chat/completions" if needed
     headers = {
         "Authorization": f"Bearer {PAWAN_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "pai-001",
+        "model": "pai-001-beta",  # Use a supported Pawan model
         "messages": [
-            {"role": "system", "content": "You are a smart duck that replies in a funny and helpful duck-themed way."},
-            {"role": "user", "content": prompt}
+            {
+                "role": "system",
+                "content": "You are a smart duck that replies in a funny and helpful duck-themed way."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
         ],
         "temperature": 0.7,
-        "max_tokens": 100
+        "max_tokens": 150
     }
 
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=data) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                return f"Quack? (error {resp.status}: {text})"
             result = await resp.json()
-            return result.get("choices", [{}])[0].get("message", {}).get("content", "Quack?")
+            choice = result.get("choices", [])
+            if not choice:
+                return "Quack?"
+            msg_content = choice[0].get("message", {}).get("content") or choice[0].get("text")
+            return msg_content.strip() if msg_content else "Quack?"
     
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
