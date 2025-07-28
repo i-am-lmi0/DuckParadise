@@ -48,6 +48,8 @@ fishes = [            # for economy game
 
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
 
+PAWAN_API_KEY = os.environ.get("PAWAN_API_KEY")
+
 ROLE_ID = 1396526875987148982      # for the .duckquiz
 QUIZ_CHANNEL = 1370374735594258558
 NUM_Q = 10
@@ -216,6 +218,21 @@ async def on_ready():
         ]
         await shop_col.insert_many(initial_items)
         print("✅ Shop items added.")
+        
+async def ask_duck_gpt(prompt: str) -> str:
+    url = "https://pawan.krishna.api.stdlib.com/gpt3@1.0.0/"
+    headers = {"Authorization": f"Bearer {PAWAN_API_KEY}"}
+    data = {
+        "prompt": f"You're a smart duck that replies in a funny and helpful duck-themed way. {prompt}",
+        "model": "gpt-3.5-turbo",
+        "temperature": 0.7,
+        "max_tokens": 100
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            result = await resp.json()
+            return result.get("choices", [{}])[0].get("text", "Quack?")
     
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
@@ -225,10 +242,18 @@ last_sticky_msg = {}
 
 @bot.event
 async def on_message(message):
-    if message.author.bot or not message.guild:
+    if message.author.bot:
         return
+
+# PAWAN CONFIG \\\\\\\\\\\\\\
+    await bot.process_commands(message)  # keep commands working
+
+    if bot.user in message.mentions:
+        await message.channel.typing()
+        reply = await ask_duck_gpt(message.content)
+        await message.reply(reply)
         
-# STICKYNOTE CONFIG ===============================
+# STICKYNOTE CONFIG \\\\\\\\\\\\
     doc = await sticky_col.find_one({
         "guild": str(message.guild.id),
         "channel": str(message.channel.id)
@@ -250,7 +275,7 @@ async def on_message(message):
             except Exception as e:
                 print(f"[sticky repost error] {e}")
 
-# AFK CONFIG ======================================================================
+# AFK CONFIG \\\\\\\\
      # check mentions
     for user in message.mentions:
         doc = await afk_col.find_one({"_id": f"{message.guild.id}-{user.id}"})
@@ -277,7 +302,7 @@ async def on_message(message):
     await bot.process_commands(message)
     await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
         
-# 3. COMMANDS =================================================
+# 3. COMMANDS \\\\\\\\
 @bot.command()
 async def staffset(ctx, role: discord.Role):
     if ctx.author != ctx.guild.owner:
