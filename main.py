@@ -847,60 +847,77 @@ async def choosejob(ctx):
         view=view
     )
 
-@bot.command()
+@bot.command(name="work")
 @commands.cooldown(1, 43200, commands.BucketType.user)  # 12-hour cooldown
 async def work(ctx):
-    data = await get_user(ctx.guild.id, ctx.author.id)
-    job = data.get("job")
-    if not job:
-        # Use the correct prefix
-        doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
-        prefix = doc.get("prefix", "?") if doc else "?"
-        return await ctx.send(f"❌ Choose a job first using `{prefix}choosejob`.")
+    try:
+        data = await get_user(ctx.guild.id, ctx.author.id)
+        job = data.get("job")
 
-    # Requirement: developers must have a laptop
-    if job == "developer" and "laptop" not in data.get("inventory", []):
-        return await ctx.send("💻 You need a **laptop** to work as a developer!")
+        if not job:
+            # Get server prefix for help message
+            doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
+            prefix = doc.get("prefix", "?") if doc else "?"
+            return await ctx.send(f"❌ You don’t have a job yet! Use `{prefix}choosejob` to get one.")
 
-    job_start = data.get("job_start")
-    promoted = data.get("promoted", False)
-    if job_start:
-        days_worked = (datetime.utcnow() - job_start).days
-    else:
-        days_worked = 0
+        # Inventory check for developer job
+        inventory = data.get("inventory", [])
+        if job == "developer" and "laptop" not in inventory:
+            return await ctx.send("💻 You need a **laptop** to work as a developer!")
 
-    base_payouts = {
-        "developer": (300, 600),
-        "duck": (200, 500)
-    }
-    promo_payouts = {
-        "developer": (600, 1000),
-        "duck": (500, 900)
-    }
-    descriptions = {
-        "developer": "You wrote some killer code and your boss loved it 💻",
-        "duck": "You danced and quacked around the duck pond 🦆"
-    }
+        # Job time & promotion logic
+        job_start_raw = data.get("job_start")
+        promoted = data.get("promoted", False)
+        if job_start_raw:
+            job_start = datetime.fromisoformat(job_start_raw) if isinstance(job_start_raw, str) else job_start_raw
+            days_worked = (datetime.utcnow() - job_start).days
+        else:
+            days_worked = 0
 
-    # 0.1% promotion after 7 days
-    if not promoted and days_worked >= 7 and random.random() <= 0.001:
-        promoted = True
-        await ctx.send("🎉 **Congratulations – You've been PROMOTED!** You now earn more in your job!")
+        # Payouts and job descriptions
+        base_payouts = {
+            "developer": (300, 600),
+            "duck": (200, 500)
+        }
+        promo_payouts = {
+            "developer": (600, 1000),
+            "duck": (500, 900)
+        }
+        descriptions = {
+            "developer": "You wrote some killer code 💻",
+            "duck": "You danced and quacked around the duck pond 🦆"
+        }
 
-    low, high = promo_payouts[job] if promoted else base_payouts[job]
-    earned = random.randint(low, high)
-    new_wallet = data["wallet"] + earned
+        # Promotion chance after 7 days
+        if not promoted and days_worked >= 7 and random.random() <= 0.001:
+            promoted = True
+            await ctx.send("🎉 **Congratulations – You've been PROMOTED!** You now earn more in your job!")
 
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": new_wallet, "promoted": promoted}}
-    )
+        # Payout calculation
+        low, high = promo_payouts[job] if promoted else base_payouts[job]
+        earned = random.randint(low, high)
+        new_wallet = data.get("wallet", 0) + earned
 
-    await ctx.send(
-        f"🧾 {descriptions[job]}\n"
-        f"💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!"
-    )
-    
+        # Save changes to Mongo
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$set": {
+                "wallet": new_wallet,
+                "promoted": promoted
+            }},
+            upsert=True
+        )
+
+        await ctx.send(
+            f"🧾 {descriptions.get(job, 'You worked hard!')}\n"
+            f"💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!"
+        )
+
+    except Exception as e:
+        # Catch any unexpected errors and log them
+        await ctx.send("⚠️ Something went wrong while processing your work. Please try again.")
+        print(f"[ERROR] work command: {type(e).__name__} - {e}")
+
 @work.error
 async def work_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
@@ -908,6 +925,9 @@ async def work_error(ctx, error):
         hours, remainder = divmod(total_seconds, 3600)
         minutes, _ = divmod(remainder, 60)
         return await ctx.send(f"🕒 You can work again in {hours}h {minutes}m.")
+    else:
+        await ctx.send("⚠️ An unexpected error occurred.")
+        raise error
 
 @bot.command()
 async def jobstatus(ctx):
