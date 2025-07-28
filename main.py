@@ -1126,7 +1126,7 @@ class QuizView(discord.ui.View):
             b.disabled = True
 
     async def show_next(self, interaction: discord.Interaction = None):
-        self.clear_items()  # Clear old buttons
+        self.clear_items()  # clear old buttons
     
         if self.current_index >= len(self.questions):
             await self.finish_quiz()
@@ -1145,10 +1145,10 @@ class QuizView(discord.ui.View):
         for i in range(1, 5):
             self.add_item(AnswerButton(str(i), i, self))
     
-        if interaction:
-            await interaction.edit_original_response(embed=embed, view=self)
-        else:
-            await self.ctx.send(embed=embed, view=self)
+    if interaction:
+        await interaction.channel.send(embed=embed, view=self)
+    else:
+        await self.ctx.send(embed=embed, view=self)
             
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.parent_view.user_id:
