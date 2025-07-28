@@ -1084,28 +1084,30 @@ class AnswerButton(discord.ui.Button):
         self.parent_view = parent_view
 
     async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.parent_view.user_id:
+        view = self.parent_view
+        if interaction.user.id != view.user_id:
             return await interaction.response.send_message("This quiz isn't yours.", ephemeral=True)
 
-        if self.parent_view.answered_ids.get(self.parent_view.current_index):
+        idx = view.current_index
+        if view.answered_ids.get(idx):
             return await interaction.response.send_message("You already answered this question.", ephemeral=True)
 
-        self.parent_view.answered_ids[self.parent_view.current_index] = True
-        correct_answer = self.parent_view.questions[self.parent_view.current_index]['answer']
+        # record answer
+        view.answered_ids[idx] = True
+        correct_answer = view.questions[idx]['answer']
         if self.value == correct_answer:
-            self.parent_view.score += 1
+            view.score += 1
 
-        # disable buttons
-        self.parent_view.disable_all_buttons()
-        await interaction.message.edit(view=self.parent_view)
+        # disable all buttons in this view
+        view.disable_all_buttons()
+        await interaction.response.edit_message(view=view)
 
-        reply_text = ("✅ Correct!" if self.value == correct_answer else
-                      f"❌ Wrong! Answer was: {self.parent_view.questions[self.parent_view.current_index]['options'][correct_answer-1]}")
-        await interaction.response.send_message(reply_text, ephemeral=True)
+        reply = ("✅ Correct!" if self.value == correct_answer
+                 else f"❌ Wrong! Answer was: {view.questions[idx]['options'][correct_answer-1]}")
+        await interaction.followup.send(reply, ephemeral=True)
 
-        # move to next question after short delay
-        self.parent_view.current_index += 1
-        await self.parent_view.show_next(interaction)
+        view.current_index += 1
+        await view.show_next(interaction)
 
 class QuizView(discord.ui.View):
     def __init__(self, ctx, quiz_id, questions_list):
@@ -1117,21 +1119,19 @@ class QuizView(discord.ui.View):
         self.current_index = 0
         self.score = 0
         self.answered_ids = {}
-        # add 4 buttons
+        # add answer buttons
         for i in range(1, 5):
             self.add_item(AnswerButton(str(i), i, self))
 
     def disable_all_buttons(self):
-        for b in self.children:
-            b.disabled = True
+        for item in self.children:
+            item.disabled = True
 
     async def show_next(self, interaction: discord.Interaction = None):
-        self.clear_items()  # clear old buttons
-    
         if self.current_index >= len(self.questions):
             await self.finish_quiz()
             return
-    
+
         q = self.questions[self.current_index]
         opts = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(q["options"]))
         embed = discord.Embed(
@@ -1139,73 +1139,50 @@ class QuizView(discord.ui.View):
             description=q["q"],
             color=discord.Color.teal()
         )
-        embed.set_footer(text="Press a button to answer.")
         embed.add_field(name="Options", value=opts, inline=False)
-    
+        embed.set_footer(text="Click a button below to answer.")
+
+        # reset buttons for new question
+        self.clear_items()
         for i in range(1, 5):
             self.add_item(AnswerButton(str(i), i, self))
-    
-    if interaction:
-        await interaction.channel.send(embed=embed, view=self)
-    else:
-        await self.ctx.send(embed=embed, view=self)
-            
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.parent_view.user_id:
-            return await interaction.response.send_message("This quiz isn't yours.", ephemeral=True)
-    
-        if self.parent_view.answered_ids.get(self.parent_view.current_index):
-            return await interaction.response.send_message("You already answered this question.", ephemeral=True)
-    
-        self.parent_view.answered_ids[self.parent_view.current_index] = True
-        correct_answer = self.parent_view.questions[self.parent_view.current_index]['answer']
-        if self.value == correct_answer:
-            self.parent_view.score += 1
-    
-        await interaction.response.defer(ephemeral=True)
-        self.parent_view.disable_all_buttons()
-        await interaction.edit_original_response(view=self.parent_view)
-    
-        reply_text = ("✅ Correct!" if self.value == correct_answer else
-                      f"❌ Wrong! Answer was: {self.parent_view.questions[self.parent_view.current_index]['options'][correct_answer-1]}")
-        await interaction.followup.send(reply_text, ephemeral=True)
-    
-        self.parent_view.current_index += 1
-        await self.parent_view.show_next(interaction)
-    
+
+        if interaction:
+            await interaction.followup.send(embed=embed, view=self, ephemeral=True)
+        else:
+            await self.ctx.send(embed=embed, view=self, ephemeral=True)
+
     async def finish_quiz(self):
-        pct = self.score / len(self.questions) * 100.0
+        pct = (self.score / len(self.questions)) * 100.0
         passed = pct >= PASS_PCT
-        # update DB record
+
         await quiz_col.update_one(
             {"_id": self.quiz_id},
             {"$set": {"score": self.score, "completed": datetime.utcnow(), "passed": passed}}
         )
-        # send result
-        content = f"📊 You scored **{self.score}/{len(self.questions)}** = **{pct:.1f}%**"
+
+        result_msg = f"📊 You scored **{self.score}/{len(self.questions)}** = **{pct:.1f}%**"
         if passed:
             role = self.ctx.guild.get_role(ROLE_ID)
             if role:
                 await self.ctx.author.add_roles(role)
-                content += f"\n🎉 You passed and got the **{role.name}** role!"
+                result_msg += f"\n🎉 You passed and got the **{role.name}** role!"
             else:
-                content += "\n⚠️ Could not assign role (missing)."
-        await self.ctx.send(content)
+                result_msg += "\n⚠️ Role exists in code but isn’t found on server."
+
+        await self.ctx.send(result_msg)
         self.stop()
 
 @bot.command()
 @commands.cooldown(1, 3600, commands.BucketType.user)
 async def duckquiz(ctx):
-    
     if ctx.channel.id != QUIZ_CHANNEL:
-        return await ctx.send(f"❌ Please use this command in <#1370374735594258558>.")
+        return await ctx.send(f"❌ Please use this command in <#{QUIZ_CHANNEL}>.")
 
-    USER = str(ctx.author.id)
-    GUILD = str(ctx.guild.id)
-    # check previous pass
+    USER, GUILD = str(ctx.author.id), str(ctx.guild.id)
     rec = await quiz_col.find_one({"guild": GUILD, "user": USER, "passed": True})
     if rec:
-        await ctx.send("ℹ You’ve already passed. Retake? Type `yes` in chat.")
+        await ctx.send("ℹ You’ve already passed; type `yes` within 30s to retake.")
         try:
             msg = await bot.wait_for("message", timeout=30, check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
             if msg.content.strip().lower() != "yes":
@@ -1213,26 +1190,20 @@ async def duckquiz(ctx):
         except asyncio.TimeoutError:
             return await ctx.send("⌛ Timed out—quiz cancelled.")
 
-    # select new questions
     used = await quiz_col.distinct("qid", {"guild": GUILD, "used": True})
     pool = [q for q in questions if q["id"] not in used]
     if len(pool) < NUM_Q:
         await quiz_col.update_many({"guild": GUILD}, {"$unset": {"used": ""}})
         pool = questions.copy()
     selected = random.sample(pool, NUM_Q)
-    # mark used
+
     for q in selected:
         await quiz_col.update_one({"guild": GUILD, "qid": q["id"]}, {"$set": {"used": True}}, upsert=True)
 
     quiz_doc = {
-        "guild": GUILD,
-        "user": USER,
-        "started": datetime.utcnow(),
+        "guild": GUILD, "user": USER, "started": datetime.utcnow(),
         "questions": [q["id"] for q in selected],
-        "answers": {},
-        "score": 0,
-        "completed": None,
-        "passed": False,
+        "answers": {}, "score": 0, "completed": None, "passed": False
     }
     res = await quiz_col.insert_one(quiz_doc)
     view = QuizView(ctx, res.inserted_id, selected)
@@ -1244,7 +1215,7 @@ async def duckquiz_error(ctx, error):
         mins = int(error.retry_after // 60)
         await ctx.send(f"🕒 Please wait {mins} more minute(s) before doing the quiz again.")
     else:
-        await ctx.send("⚠️ An error occurred—please try again.")
+        await ctx.send("⚠️ An error occurred, please try again.")
     
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
