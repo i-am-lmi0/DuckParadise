@@ -48,8 +48,6 @@ fishes = [            # for economy game
 
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
 
-PAWAN_API_KEY = os.environ.get("PAWAN_API_KEY")
-
 ROLE_ID = 1396526875987148982      # for the .duckquiz
 QUIZ_CHANNEL = 1370374735594258558
 NUM_Q = 10
@@ -220,17 +218,17 @@ async def on_ready():
         print("✅ Shop items added.")
 
 async def ask_duck_gpt(prompt: str) -> str:
-    url = "https://api.pawan.krd/v1/chat/completions"  # or "/cosmosrp/v1/chat/completions" if needed
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {PAWAN_API_KEY}",
+        "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "pai-001-beta",  # Use a supported Pawan model
+        "model": "deepseek/deepseek-r1:free",
         "messages": [
             {
                 "role": "system",
-                "content": "You are a smart duck that replies in a funny and helpful duck-themed way."
+                "content": "You are a smart duck that replies in a funny and helpful duck-themed way. Always include something duck-related in your answers. Quack quack!"
             },
             {
                 "role": "user",
@@ -247,11 +245,11 @@ async def ask_duck_gpt(prompt: str) -> str:
                 text = await resp.text()
                 return f"Quack? (error {resp.status}: {text})"
             result = await resp.json()
-            choice = result.get("choices", [])
-            if not choice:
+            choices = result.get("choices", [])
+            if not choices:
                 return "Quack?"
-            msg_content = choice[0].get("message", {}).get("content") or choice[0].get("text")
-            return msg_content.strip() if msg_content else "Quack?"
+            msg = choices[0].get("message", {}).get("content")
+            return msg.strip() if msg else "Quack?"
     
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
@@ -264,7 +262,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-# PAWAN CONFIG \\\\\\\\\\\\\\
+# DUCKGPT CONFIG \\\\\\\\\\\\\\
     if bot.user in message.mentions:
         await message.channel.typing()
         reply = await ask_duck_gpt(message.content)
