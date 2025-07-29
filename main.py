@@ -1842,4 +1842,4 @@ def run_flask():
 if __name__ == "__main__":
     print("Starting bot...")
     threading.Thread(target=run_flask).start()
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    bot.run(TOKEN)
