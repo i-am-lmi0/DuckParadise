@@ -265,8 +265,13 @@ async def on_message(message):
 # DUCKGPT CONFIG \\\\\\\\\\\\\\
     if bot.user in message.mentions:
         await message.channel.typing()
-        reply = await ask_duck_gpt(message.content)
+        prompt = message.content.replace(f"<@{bot.user.id}>", "").strip()
+        if not prompt:
+            prompt = "Say something ducky!"
+        reply = await ask_duck_gpt(prompt)
         await message.reply(reply)
+    
+    await bot.process_commands(message)
         
 # STICKYNOTE CONFIG \\\\\\\\\\\\
     doc = await sticky_col.find_one({
