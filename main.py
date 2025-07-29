@@ -265,8 +265,6 @@ async def on_message(message):
         return
 
 # PAWAN CONFIG \\\\\\\\\\\\\\
-    await bot.process_commands(message)  # keep commands working
-
     if bot.user in message.mentions:
         await message.channel.typing()
         reply = await ask_duck_gpt(message.content)
