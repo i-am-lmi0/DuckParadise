@@ -49,7 +49,6 @@ fishes = [            # for economy game
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-MODEL_ID = "openrouter:anthropic/claude-3.5-sonnet"
 SYSTEM_PROMPT = "You are a smart and helpful duck that replies in duck-themed style. Always start with a quack."
 
 ROLE_ID = 1396526875987148982      # for the .duckquiz
@@ -208,7 +207,7 @@ async def before_unmute_loop():
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Game(name="theofficialtruck"))
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="thetruck"))
     print(f"🎉 Bot ready — Logged in as {bot.user}")
 
     # Only insert shop items once
@@ -1776,6 +1775,7 @@ async def cmds(ctx):
     pages = [general, economy]
 
     if is_staff:
+        pages.append(staff)
         staff = discord.Embed(title="🛠️ Staff Commands", color=discord.Color.dark_red())
         for name, value in [
             ("?kick @user [reason]", "Kick a member"),
