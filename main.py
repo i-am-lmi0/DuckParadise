@@ -1704,33 +1704,34 @@ async def pun(ctx):
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
 
+from discord.ui import View, Button
+from discord import Interaction, ButtonStyle
+
 class CommandPages(View):
     def __init__(self, embeds, is_staff: bool):
         super().__init__(timeout=None)
         self.embeds = embeds
-        self.index = 0
+        self.is_staff = is_staff
 
-        # Navigation buttons
-        self.add_item(Button(label="General", style=discord.ButtonStyle.secondary, custom_id="general"))
-        self.add_item(Button(label="Economy", style=discord.ButtonStyle.success, custom_id="economy"))
+        self.add_item(Button(label="💬General", style=ButtonStyle.secondary, custom_id="general"))
+        self.add_item(Button(label="💰Economy", style=ButtonStyle.success, custom_id="economy"))
 
         if is_staff:
-            self.add_item(Button(label="Staff", style=discord.ButtonStyle.danger, custom_id="staff"))
+            self.add_item(Button(label="🛠️Staff", style=ButtonStyle.danger, custom_id="staff"))
 
-    @discord.ui.button(label="General", style=discord.ButtonStyle.secondary, custom_id="general")
-    async def go_general(self, interaction: Interaction, button: Button):
-        self.index = 0
-        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+    @discord.ui.button(label="💬General", style=ButtonStyle.secondary, row=0)
+    async def general(self, interaction: Interaction, button: Button):
+        await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
-    @discord.ui.button(label="Economy", style=discord.ButtonStyle.success, custom_id="economy")
-    async def go_economy(self, interaction: Interaction, button: Button):
-        self.index = 1
-        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+    @discord.ui.button(label="💰Economy", style=ButtonStyle.success, row=0)
+    async def economy(self, interaction: Interaction, button: Button):
+        await interaction.response.edit_message(embed=self.embeds[1], view=self)
 
-    @discord.ui.button(label="Staff", style=discord.ButtonStyle.danger, custom_id="staff")
-    async def go_staff(self, interaction: Interaction, button: Button):
-        self.index = 2
-        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+    @discord.ui.button(label="🛠️Staff", style=ButtonStyle.danger, row=0)
+    async def staff(self, interaction: Interaction, button: Button):
+        if not self.is_staff or len(self.embeds) < 3:
+            return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
+        await interaction.response.edit_message(embed=self.embeds[2], view=self)
 
 bot.remove_command("help")
 @bot.command(aliases=["help"])
