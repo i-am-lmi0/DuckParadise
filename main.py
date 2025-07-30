@@ -49,7 +49,7 @@ fishes = [            # for economy game
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-SYSTEM_PROMPT = "You are a smart and helpful duck that replies in duck-themed style. Always start with a quack."
+SYSTEM_PROMPT = "You are a smart and helpful duck that replies in duck-themed style. The server you are in is called Duck Paradise. Your creator is thetruck. The owner of the server is CuteBatak. Always start with a quack. Keep sentences 3-4 sentences, no more than 4 sentences."
 
 ROLE_ID = 1396526875987148982      # for the .duckquiz
 QUIZ_CHANNEL = 1370374735594258558
@@ -234,6 +234,8 @@ async def ask_duck_gpt(prompt: str) -> str:
         ],
         "temperature": 0.7,
         "max_tokens": 300
+        "stop": ["\n\n", "User:", "System:", "Assistant:"]
+
     }
 
     async with aiohttp.ClientSession() as session:
