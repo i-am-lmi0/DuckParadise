@@ -1704,9 +1704,6 @@ async def pun(ctx):
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
 
-from discord.ui import View, Button
-from discord import Interaction, ButtonStyle
-
 class CommandPages(View):
     def __init__(self, embeds, is_staff: bool):
         super().__init__(timeout=None)
@@ -1715,20 +1712,22 @@ class CommandPages(View):
 
         self.add_item(Button(label="💬General", style=ButtonStyle.secondary, custom_id="general"))
         self.add_item(Button(label="💰Economy", style=ButtonStyle.success, custom_id="economy"))
-
         if is_staff:
             self.add_item(Button(label="🛠️Staff", style=ButtonStyle.danger, custom_id="staff"))
 
-    @discord.ui.button(label="💬General", style=ButtonStyle.secondary, row=0)
-    async def general(self, interaction: Interaction, button: Button):
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return True  # allow all interactions for now
+
+    @discord.ui.button(label="💬General", style=ButtonStyle.secondary, custom_id="general")
+    async def handle_general(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
-    @discord.ui.button(label="💰Economy", style=ButtonStyle.success, row=0)
-    async def economy(self, interaction: Interaction, button: Button):
+    @discord.ui.button(label="💰Economy", style=ButtonStyle.success, custom_id="economy")
+    async def handle_economy(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[1], view=self)
 
-    @discord.ui.button(label="🛠️Staff", style=ButtonStyle.danger, row=0)
-    async def staff(self, interaction: Interaction, button: Button):
+    @discord.ui.button(label="🛠️Staff", style=ButtonStyle.danger, custom_id="staff")
+    async def handle_staff(self, interaction: Interaction, button: Button):
         if not self.is_staff or len(self.embeds) < 3:
             return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
         await interaction.response.edit_message(embed=self.embeds[2], view=self)
