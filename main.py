@@ -235,17 +235,19 @@ async def ask_duck_gpt(prompt: str) -> str:
         "temperature": 0.7,
         "max_tokens": 150
     }
+
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as resp:
-            text = await resp.text()
             if resp.status != 200:
+                text = await resp.text()
                 return f"Quack? (error {resp.status}: {text})"
             data = await resp.json()
             choices = data.get("choices", [])
             if not choices:
                 return "Quack?"
-            content = choices[0].get("message", {}).get("content") or choices[0].get("text")
-            return content.strip()
+            message = choices[0].get("message", {})
+            content = message.get("content")
+            return content.strip() if content else "Quack?"
 
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
@@ -1828,6 +1830,7 @@ async def cmds(ctx):
     view = CommandPages(pages, is_staff)
     async def on_interaction(interaction: Interaction):
         await view.interaction_handler(interaction)
+    view.on_interaction = on_interaction
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
