@@ -261,39 +261,43 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-# DUCKGPT CONFIG \\\\\\\\\\\\\\
+    # DUCKGPT CONFIG /////////////////////
     if bot.user in message.mentions:
         prompt = message.clean_content.replace(f"<@{bot.user.id}>", "").strip()
         if not prompt:
             prompt = "Quack!"
-        await message.channel.trigger_typing()
+        await message.channel.typing()
         reply = await ask_duck_gpt(prompt)
         await message.reply(reply)
-        
-# STICKYNOTE CONFIG \\\\\\\\\\\\
-    doc = await sticky_col.find_one({
-        "guild": str(message.guild.id),
-        "channel": str(message.channel.id)
-    })
-    if doc:
-        now = time.time()
-        if now - last_sticky_trigger[message.channel.id] >= 3:
-            last_sticky_trigger[message.channel.id] = now
-            try:
-                # Delete old sticky message if exists
+
+    # STICKY NOTE CONFIG //////////////////
+    try:
+        doc = await sticky_col.find_one({
+            "guild": str(message.guild.id),
+            "channel": str(message.channel.id)
+        })
+        if doc:
+            now = time.time()
+            if now - last_sticky_trigger.get(message.channel.id, 0) >= 3:
+                last_sticky_trigger[message.channel.id] = now
+
+                # Delete old sticky if exists
                 old_id = last_sticky_msg.get(message.channel.id)
                 if old_id:
-                    old = await message.channel.fetch_message(old_id)
-                    await old.delete()
-                # Send and store new sticky
-                embed = discord.Embed(description=doc["text"], color=discord.Color.burple())
+                    try:
+                        old = await message.channel.fetch_message(old_id)
+                        await old.delete()
+                    except:
+                        pass
+
+                # Send and track new sticky
+                embed = discord.Embed(description=doc["text"], color=discord.Color.blurple())
                 sent = await message.channel.send(embed=embed)
                 last_sticky_msg[message.channel.id] = sent.id
-            except Exception as e:
-                print(f"[sticky repost error] {e}")
+    except Exception as e:
+        print(f"[sticky repost error] {e}")
 
-# AFK CONFIG \\\\\\\\
-     # check mentions
+    # AFK CONFIG ////////////////
     for user in message.mentions:
         doc = await afk_col.find_one({"_id": f"{message.guild.id}-{user.id}"})
         if doc:
@@ -303,14 +307,13 @@ async def on_message(message: discord.Message):
                 dt = parser.isoparse(timestamp)
                 elapsed = datetime.now(timezone.utc) - dt.replace(tzinfo=timezone.utc)
                 mins = int(elapsed.total_seconds() // 60)
-                hours = mins // 60
-                mins %= 60
+                hours, mins = divmod(mins, 60)
                 time_str = f"{hours}h {mins}m ago" if hours else f"{mins} minutes ago"
                 await message.channel.send(f"📨 {user.display_name} is AFK ({reason}) — set {time_str}.")
             else:
                 await message.channel.send(f"📨 {user.display_name} is AFK: {reason}")
 
-    # remove AFK status if the user talks
+    # Remove AFK if user speaks
     afk_key = f"{message.guild.id}-{message.author.id}"
     if await afk_col.find_one({"_id": afk_key}):
         await afk_col.delete_one({"_id": afk_key})
@@ -319,7 +322,7 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
     await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
         
-# 3. COMMANDS \\\\\\\\
+# 3. COMMANDS ==================================================
 @bot.command()
 async def staffset(ctx, role: discord.Role):
     if ctx.author != ctx.guild.owner:
