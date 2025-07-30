@@ -314,7 +314,7 @@ async def on_message(message: discord.Message):
     afk_key = f"{message.guild.id}-{message.author.id}"
     if await afk_col.find_one({"_id": afk_key}):
         await afk_col.delete_one({"_id": afk_key})
-        await message.channel.send(f"✅ Welcome back, {message.author.mention}! AFK removed.")
+        await message.channel.send(f"✅ Welcome back, {message.author.mention}! AFK removed.", delete_after=5)
 
     await bot.process_commands(message)
     await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
