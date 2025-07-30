@@ -1789,7 +1789,7 @@ async def cmds(ctx):
 
     pages = [general, economy]
 
-        if is_staff:
+    if is_staff:
         staff_commands = [
             ("?kick @user [reason]", "Kick a member"),
             ("?ban @user [reason]", "Ban a member"),
