@@ -1710,18 +1710,20 @@ class CommandPages(View):
         self.embeds = embeds
         self.is_staff = is_staff
 
-    @discord.ui.button(label="💬 General", style=ButtonStyle.secondary, custom_id="general")
+    @discord.ui.button(label="💬 General", style=ButtonStyle.secondary, row=0)
     async def general_button(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
-    @discord.ui.button(label="💰 Economy", style=ButtonStyle.success, custom_id="economy")
+    @discord.ui.button(label="💰 Economy", style=ButtonStyle.success, row=0)
     async def economy_button(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[1], view=self)
 
-    @discord.ui.button(label="🛠️ Staff", style=ButtonStyle.danger, custom_id="staff", row=1)
+    @discord.ui.button(label="🛠️ Staff", style=ButtonStyle.danger, row=1)
     async def staff_button(self, interaction: Interaction, button: Button):
         if not self.is_staff or len(self.embeds) < 3:
-            return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
+            return await interaction.response.send_message(
+                "❌ You don’t have permission to view staff commands.", ephemeral=True
+            )
         await interaction.response.edit_message(embed=self.embeds[2], view=self)
 
 bot.remove_command("help")
@@ -1809,8 +1811,6 @@ async def cmds(ctx):
         pages.append(staff)
 
     view = CommandPages(pages, is_staff)
-    if not is_staff:
-        view.remove_item(view.children[-1])
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
