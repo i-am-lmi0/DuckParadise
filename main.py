@@ -48,6 +48,10 @@ fishes = [            # for economy game
 
 ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck command
 
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+MODEL_ID = "openrouter:anthropic/claude-3.5-sonnet"
+SYSTEM_PROMPT = "You are a smart and helpful duck that replies in duck-themed style. Always start with a quack."
+
 ROLE_ID = 1396526875987148982      # for the .duckquiz
 QUIZ_CHANNEL = 1370374735594258558
 NUM_Q = 10
@@ -220,37 +224,32 @@ async def on_ready():
 async def ask_duck_gpt(prompt: str) -> str:
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    data = {
-        "model": "deepseek/deepseek-r1:free",
+    payload = {
+        "model": MODEL_ID,
         "messages": [
-            {
-                "role": "system",
-                "content": "You are a smart duck that replies in a funny and helpful duck-themed way. Always include something duck-related in your answers. Quack quack!"
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "max_tokens": 150
+        "max_tokens": 150,
+        # fallback models
+        "models": ["openrouter:anthropic/claude-3.5-sonnet"]
     }
-
     async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as resp:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            text = await resp.text()
             if resp.status != 200:
-                text = await resp.text()
                 return f"Quack? (error {resp.status}: {text})"
-            result = await resp.json()
-            choices = result.get("choices", [])
+            data = await resp.json()
+            choices = data.get("choices", [])
             if not choices:
                 return "Quack?"
-            msg = choices[0].get("message", {}).get("content")
-            return msg.strip() if msg else "Quack?"
-    
+            content = choices[0].get("message", {}).get("content") or choices[0].get("text")
+            return content.strip()
+
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
 
@@ -264,14 +263,12 @@ async def on_message(message):
 
 # DUCKGPT CONFIG \\\\\\\\\\\\\\
     if bot.user in message.mentions:
-        await message.channel.typing()
-        prompt = message.content.replace(f"<@{bot.user.id}>", "").strip()
+        prompt = message.clean_content.replace(f"<@{bot.user.id}>", "").strip()
         if not prompt:
-            prompt = "Say something ducky!"
+            prompt = "Quack!"
+        await message.channel.trigger_typing()
         reply = await ask_duck_gpt(prompt)
         await message.reply(reply)
-    
-    await bot.process_commands(message)
         
 # STICKYNOTE CONFIG \\\\\\\\\\\\
     doc = await sticky_col.find_one({
