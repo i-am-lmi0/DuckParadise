@@ -220,33 +220,6 @@ async def on_ready():
         await shop_col.insert_many(initial_items)
         print("✅ Shop items added.")
 
-async def ask_duck_gpt(prompt: str) -> str:
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "openrouter:deepseek/deepseek-r1-0528",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 150
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            text = await resp.text()
-            if resp.status != 200:
-                return f"Quack? (error {resp.status}: {text})"
-            data = await resp.json()
-            choices = data.get("choices", [])
-            if not choices:
-                return "Quack?"
-            content = choices[0].get("message", {}).get("content") or choices[0].get("text")
-            return content.strip()
-
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
 
@@ -257,15 +230,6 @@ last_sticky_msg = {}
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-
-    # DUCKGPT CONFIG /////////////////////
-    if bot.user in message.mentions:
-        prompt = message.clean_content.replace(f"<@{bot.user.id}>", "").strip()
-        if not prompt:
-            prompt = "Quack!"
-        await message.channel.typing()
-        reply = await ask_duck_gpt(prompt)
-        await message.reply(reply)
 
     # STICKY NOTE CONFIG //////////////////
     try:
