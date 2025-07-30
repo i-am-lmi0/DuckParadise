@@ -227,7 +227,7 @@ async def ask_duck_gpt(prompt: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "openrouter:deepseek/deepseek-r1-0528",
+        "model": "deepseek/deepseek-r1-0528",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -1827,7 +1827,7 @@ async def cmds(ctx):
 
     view = CommandPages(pages, is_staff)
     async def on_interaction(interaction: Interaction):
-    await view.interaction_handler(interaction)
+        await view.interaction_handler(interaction)
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
