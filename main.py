@@ -158,7 +158,7 @@ async def log_action(ctx, message, user_id=None, action_type=None):
                     title="📋 Moderation Log",
                     description=message,
                     color=discord.Color.dark_blue(),
-                    timestamp=datetime.utcnow()
+                    timestamp=datetime.now(timezone.utc)
                 )
                 embed.set_footer(text=f"By {ctx.author} • {ctx.author.id}")
                 await log_channel.send(embed=embed)
@@ -170,7 +170,7 @@ async def log_action(ctx, message, user_id=None, action_type=None):
                 "action": action_type,
                 "by": {"name": str(ctx.author), "id": str(ctx.author.id)},
                 "message": message,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             await logs_col.insert_one(log_doc)
     except Exception as e:
@@ -437,7 +437,7 @@ async def on_presence_update(before, after):
                     f"for proudly displaying our vanity `{keyword}` in their status!"
                 ),
                 color=discord.Color.magenta(),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             ).set_thumbnail(url=after.display_avatar.url))
 
     # Remove role when keyword is removed from status (while online)
@@ -452,7 +452,7 @@ async def on_presence_update(before, after):
                     f"displaying our vanity `{keyword}`."
                 ),
                 color=discord.Color.light_gray(),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             ).set_thumbnail(url=after.display_avatar.url))
             
 @tasks.loop(minutes=3)
@@ -516,7 +516,7 @@ async def balance(ctx, member: discord.Member = None):
 @bot.command()
 async def daily(ctx):
     data = await get_user(ctx.guild.id, ctx.author.id)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     last = data.get("last_daily")
 
     if last and now - datetime.fromisoformat(last) < timedelta(hours=24):
@@ -533,7 +533,7 @@ async def daily(ctx):
 @bot.command()
 async def beg(ctx):
     data = await get_user(ctx.guild.id, ctx.author.id)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     last = data.get("last_beg")
 
     if last and now - datetime.fromisoformat(last) < timedelta(minutes=15):
@@ -767,7 +767,7 @@ async def coinflip_error(ctx, error):
 async def lottery(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
     data = await get_user(ctx.guild.id, ctx.author.id)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Check cooldown from Mongo
     last_time = data.get("last_lottery")
@@ -809,7 +809,7 @@ async def lottery_error(ctx, error):
 async def mysterybox(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
     data = await get_user(ctx.guild.id, ctx.author.id)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Cooldown check
     last_time = data.get("last_mysterybox")
@@ -875,7 +875,7 @@ class JobPicker(ui.View):
             {"_id": f"{self.ctx.guild.id}-{self.ctx.author.id}"},
             {"$set": {
                 "job": job_name,
-                "job_start": datetime.utcnow().isoformat(),
+                "job_start": datetime.now(timezone.utc).isoformat(),
                 "promoted": False
             }},
             upsert=True
@@ -916,7 +916,7 @@ async def work(ctx):
         promoted = data.get("promoted", False)
         if job_start_raw:
             job_start = datetime.fromisoformat(job_start_raw) if isinstance(job_start_raw, str) else job_start_raw
-            days_worked = (datetime.utcnow() - job_start).days
+            days_worked = (datetime.now(timezone.utc) - job_start).days
         else:
             days_worked = 0
 
@@ -994,7 +994,7 @@ async def jobstatus(ctx):
         print(f"[jobstatus error] Failed to parse job_start: {e}")
         return await ctx.send("⚠️ There was an error reading your job data. Please try again or contact support.")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     delta = now - job_start
 
     days = delta.days
@@ -1024,7 +1024,7 @@ async def fish(ctx):
 
     # Check for cooldown
     last_fished = data.get("last_fished")
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if last_fished:
         # Convert to datetime if stored as string (in case it is)
         if isinstance(last_fished, str):
@@ -1059,7 +1059,7 @@ async def rob(ctx, member: discord.Member):
     if member == ctx.author:
         return await ctx.send("❌ You can't rob yourself!")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     robber_id = f"{ctx.guild.id}-{ctx.author.id}"
     victim_id = f"{ctx.guild.id}-{member.id}"
 
@@ -1125,7 +1125,7 @@ async def rob(ctx, member: discord.Member):
 @bot.command()
 async def passive(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     user_data = await economy_col.find_one({"_id": user_id}) or {}
 
     passive_until = user_data.get("passive_until")
@@ -1227,7 +1227,7 @@ class QuizView(discord.ui.View):
             {"_id": self.quiz_id},
             {"$set": {
                 "score": self.score,
-                "completed": datetime.utcnow(),
+                "completed": datetime.now(timezone.utc),
                 "passed": passed
             }}
         )
@@ -1278,7 +1278,7 @@ async def duckquiz(ctx):
         await quiz_col.update_one({"guild": GUILD, "qid": q["id"]}, {"$set": {"used": True}}, upsert=True)
 
     quiz_doc = {
-        "guild": GUILD, "user": USER, "started": datetime.utcnow(),
+        "guild": GUILD, "user": USER, "started": datetime.now(timezone.utc),
         "questions": [q["id"] for q in selected],
         "answers": {}, "score": 0, "completed": None, "passed": False
     }
@@ -1300,7 +1300,7 @@ async def afk(ctx, *, reason="AFK"):
         {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
         {"$set": {
             "reason": reason,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }},
         upsert=True
     )
@@ -1379,7 +1379,7 @@ async def unmute(ctx, member: discord.Member):
 async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
     await mod_col.update_one(
         {"guild": str(ctx.guild.id), "user": str(member.id)},
-        {"$push": {"warnings": {"by": str(ctx.author), "reason": reason, "time": datetime.utcnow().isoformat()}}},
+        {"$push": {"warnings": {"by": str(ctx.author), "reason": reason, "time": datetime.now(timezone.utc).isoformat()}}},
         upsert=True
     )
     await ctx.send(f"⚠️ {member.mention} has been warned: {reason}")
@@ -1587,7 +1587,7 @@ async def testboost(ctx, member: discord.Member = None):
         title="🚀 Boost Alert!",
         description=f"{member.mention} just boosted the pond! 🌟\nThank you for your support!",
         color=discord.Color.fuchsia(),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     boost_embed.set_thumbnail(url=member.display_avatar.url)
 
@@ -1634,7 +1634,7 @@ async def on_member_join(member):
                 title="🚀 Boost Alert!",
                 description=f"{member.mention} just boosted the pond! 🌟\nThank you for your support!",
                 color=discord.Color.fuchsia(),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
             boost_embed.set_thumbnail(url=member.display_avatar.url)
             await boost_ch.send(embed=boost_embed)
@@ -1714,20 +1714,26 @@ class CommandPages(View):
         self.embeds = embeds
         self.is_staff = is_staff
 
-    @discord.ui.button(label="💬 General", style=ButtonStyle.secondary)
-    async def general_button(self, interaction: Interaction, button: Button):
-        await interaction.response.edit_message(embed=self.embeds[0], view=self)
+        # Add buttons
+        self.add_item(Button(label="💬 General", style=ButtonStyle.secondary, custom_id="general"))
+        self.add_item(Button(label="💰 Economy", style=ButtonStyle.success, custom_id="economy"))
+        if is_staff:
+            self.add_item(Button(label="🛠️ Staff", style=ButtonStyle.danger, custom_id="staff"))
 
-    @discord.ui.button(label="💰 Economy", style=ButtonStyle.success)
-    async def economy_button(self, interaction: Interaction, button: Button):
-        await interaction.response.edit_message(embed=self.embeds[1], view=self)
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return True
 
-    @discord.ui.button(label="🛠️ Staff", style=ButtonStyle.danger)
-    async def staff_button(self, interaction: Interaction, button: Button):
-        if not self.is_staff or len(self.embeds) < 3:
-            await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
-            return
-        await interaction.response.edit_message(embed=self.embeds[2], view=self)
+    async def interaction_handler(self, interaction: Interaction):
+        custom_id = interaction.data.get("custom_id")
+        if custom_id == "general":
+            await interaction.response.edit_message(embed=self.embeds[0], view=self)
+        elif custom_id == "economy":
+            await interaction.response.edit_message(embed=self.embeds[1], view=self)
+        elif custom_id == "staff":
+            if not self.is_staff or len(self.embeds) < 3:
+                await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
+                return
+            await interaction.response.edit_message(embed=self.embeds[2], view=self)
 
     async def on_timeout(self):
         for child in self.children:
@@ -1783,9 +1789,8 @@ async def cmds(ctx):
 
     pages = [general, economy]
 
-    if is_staff:
-        staff = discord.Embed(title="🛠️ Staff Commands", color=discord.Color.dark_red())
-        for name, value in [
+        if is_staff:
+        staff_commands = [
             ("?kick @user [reason]", "Kick a member"),
             ("?ban @user [reason]", "Ban a member"),
             ("?unban <user_id>", "Unban a user"),
@@ -1813,13 +1818,24 @@ async def cmds(ctx):
             ("?additem <item_name> <price> <description>", "Add an item to the shop"),
             ("?edititem <item_name> <new_price> <new_description>", "Edit an item in the shop"),
             ("?delitem <item_name>", "Remove an item from the shop")
-        ]:
-            staff.add_field(name=format_field(name, value)[0], value=value, inline=False)
-        pages.append(staff)
+        ]
+
+        for i in range(0, len(staff_commands), 25):
+            staff_embed = discord.Embed(
+                title="🛠️ Staff Commands" + (f" (Page {i//25 + 1})" if i > 0 else ""),
+                color=discord.Color.dark_red()
+            )
+            for name, value in staff_commands[i:i+25]:
+                staff_embed.add_field(name=format_field(name, value)[0], value=value, inline=False)
+            pages.append(staff_embed)
 
     view = CommandPages(pages, is_staff)
-    if not is_staff:
-        view.remove_item(view.children[2])
+
+    async def on_interaction(interaction: Interaction):
+        await view.interaction_handler(interaction)
+
+    view.on_interaction = on_interaction
+
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
