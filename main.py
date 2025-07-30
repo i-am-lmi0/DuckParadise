@@ -1712,36 +1712,24 @@ class CommandPages(View):
         self.embeds = embeds
         self.is_staff = is_staff
 
-        # Button: General
-        self.add_item(Button(label="💬 General", style=ButtonStyle.secondary, custom_id="general"))
-        # Button: Economy
-        self.add_item(Button(label="💰 Economy", style=ButtonStyle.success, custom_id="economy"))
-        # Button: Staff (only if user is staff)
-        if is_staff:
-            self.add_item(Button(label="🛠️ Staff", style=ButtonStyle.danger, custom_id="staff"))
+    @discord.ui.button(label="💬 General", style=ButtonStyle.secondary)
+    async def general_button(self, interaction: Interaction, button: Button):
+        await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
-    async def interaction_check(self, interaction: Interaction) -> bool:
-        return True
+    @discord.ui.button(label="💰 Economy", style=ButtonStyle.success)
+    async def economy_button(self, interaction: Interaction, button: Button):
+        await interaction.response.edit_message(embed=self.embeds[1], view=self)
+
+    @discord.ui.button(label="🛠️ Staff", style=ButtonStyle.danger)
+    async def staff_button(self, interaction: Interaction, button: Button):
+        if not self.is_staff or len(self.embeds) < 3:
+            await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
+            return
+        await interaction.response.edit_message(embed=self.embeds[2], view=self)
 
     async def on_timeout(self):
         for child in self.children:
             child.disabled = True
-
-    @discord.ui.button(label="", custom_id="handler", disabled=True)  # dummy, prevents error
-    async def dummy(self, interaction: Interaction, button: Button):
-        pass
-
-    async def interaction_handler(self, interaction: Interaction):
-        custom_id = interaction.data.get("custom_id")
-        if custom_id == "general":
-            await interaction.response.edit_message(embed=self.embeds[0], view=self)
-        elif custom_id == "economy":
-            await interaction.response.edit_message(embed=self.embeds[1], view=self)
-        elif custom_id == "staff":
-            if self.is_staff and len(self.embeds) >= 3:
-                await interaction.response.edit_message(embed=self.embeds[2], view=self)
-            else:
-                await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
 
 bot.remove_command("help")
 @bot.command(aliases=["help"])
@@ -1828,9 +1816,8 @@ async def cmds(ctx):
         pages.append(staff)
 
     view = CommandPages(pages, is_staff)
-    async def on_interaction(interaction: Interaction):
-        await view.interaction_handler(interaction)
-    view.on_interaction = on_interaction
+    if not is_staff:
+        view.remove_item(view.children[2])
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
