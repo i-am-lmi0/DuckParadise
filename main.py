@@ -228,16 +228,16 @@ async def ask_duck_gpt(prompt: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": MODEL_ID,
+        "model": "openrouter:anthropic/claude-3-5-sonnet-latest",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
         "max_tokens": 150,
-        # fallback models
-        "models": ["openrouter:anthropic/claude-3.5-sonnet"]
+        "models": ["openrouter:anthropic/claude-3-5-sonnet-latest"]
     }
+
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as resp:
             text = await resp.text()
@@ -248,7 +248,7 @@ async def ask_duck_gpt(prompt: str) -> str:
             if not choices:
                 return "Quack?"
             content = choices[0].get("message", {}).get("content") or choices[0].get("text")
-            return content.strip()
+            return content.strip() if content else "Quack?"
 
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
