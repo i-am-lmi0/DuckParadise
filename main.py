@@ -228,7 +228,7 @@ async def ask_duck_gpt(prompt: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "openrouter:deepseek/deepseek-r1:free",
+        "model": "openrouter:deepseek/deepseek-r1-0528",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
