@@ -1705,23 +1705,31 @@ async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
 
 class CommandPages(View):
-    def __init__(self, embeds):
+    def __init__(self, embeds, is_staff: bool):
         super().__init__(timeout=None)
         self.embeds = embeds
         self.index = 0
-        self.prev = Button(label="⏮️ Prev", style=ButtonStyle.secondary)
-        self.next = Button(label="⏭️ Next", style=ButtonStyle.secondary)
-        self.prev.callback = self.show_prev
-        self.next.callback = self.show_next
-        self.add_item(self.prev)
-        self.add_item(self.next)
 
-    async def show_prev(self, interaction: Interaction):
-        self.index = (self.index - 1) % len(self.embeds)
+        # Navigation buttons
+        self.add_item(Button(label="General", style=discord.ButtonStyle.secondary, custom_id="general"))
+        self.add_item(Button(label="Economy", style=discord.ButtonStyle.success, custom_id="economy"))
+
+        if is_staff:
+            self.add_item(Button(label="Staff", style=discord.ButtonStyle.danger, custom_id="staff"))
+
+    @discord.ui.button(label="General", style=discord.ButtonStyle.secondary, custom_id="general")
+    async def go_general(self, interaction: Interaction, button: Button):
+        self.index = 0
         await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
 
-    async def show_next(self, interaction: Interaction):
-        self.index = (self.index + 1) % len(self.embeds)
+    @discord.ui.button(label="Economy", style=discord.ButtonStyle.success, custom_id="economy")
+    async def go_economy(self, interaction: Interaction, button: Button):
+        self.index = 1
+        await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
+
+    @discord.ui.button(label="Staff", style=discord.ButtonStyle.danger, custom_id="staff")
+    async def go_staff(self, interaction: Interaction, button: Button):
+        self.index = 2
         await interaction.response.edit_message(embed=self.embeds[self.index], view=self)
 
 bot.remove_command("help")
@@ -1775,7 +1783,6 @@ async def cmds(ctx):
     pages = [general, economy]
 
     if is_staff:
-        pages.append(staff)
         staff = discord.Embed(title="🛠️ Staff Commands", color=discord.Color.dark_red())
         for name, value in [
             ("?kick @user [reason]", "Kick a member"),
@@ -1807,10 +1814,9 @@ async def cmds(ctx):
             ("?delitem <item_name>", "Remove an item from the shop")
         ]:
             staff.add_field(name=format_field(name, value)[0], value=value, inline=False)
-
         pages.append(staff)
 
-    view = CommandPages(pages)
+    view = CommandPages(pages, is_staff)
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
