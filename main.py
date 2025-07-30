@@ -1710,24 +1710,22 @@ class CommandPages(View):
         self.embeds = embeds
         self.is_staff = is_staff
 
+        # Create and bind buttons manually
         self.add_item(Button(label="💬General", style=ButtonStyle.secondary, custom_id="general"))
         self.add_item(Button(label="💰Economy", style=ButtonStyle.success, custom_id="economy"))
         if is_staff:
             self.add_item(Button(label="🛠️Staff", style=ButtonStyle.danger, custom_id="staff"))
 
-    async def interaction_check(self, interaction: Interaction) -> bool:
-        return True  # allow all interactions for now
-
     @discord.ui.button(label="💬General", style=ButtonStyle.secondary, custom_id="general")
-    async def handle_general(self, interaction: Interaction, button: Button):
+    async def general_button(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
     @discord.ui.button(label="💰Economy", style=ButtonStyle.success, custom_id="economy")
-    async def handle_economy(self, interaction: Interaction, button: Button):
+    async def economy_button(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[1], view=self)
 
     @discord.ui.button(label="🛠️Staff", style=ButtonStyle.danger, custom_id="staff")
-    async def handle_staff(self, interaction: Interaction, button: Button):
+    async def staff_button(self, interaction: Interaction, button: Button):
         if not self.is_staff or len(self.embeds) < 3:
             return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
         await interaction.response.edit_message(embed=self.embeds[2], view=self)
