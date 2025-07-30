@@ -1710,21 +1710,15 @@ class CommandPages(View):
         self.embeds = embeds
         self.is_staff = is_staff
 
-        # Create and bind buttons manually
-        self.add_item(Button(label="💬General", style=ButtonStyle.secondary, custom_id="general"))
-        self.add_item(Button(label="💰Economy", style=ButtonStyle.success, custom_id="economy"))
-        if is_staff:
-            self.add_item(Button(label="🛠️Staff", style=ButtonStyle.danger, custom_id="staff"))
-
-    @discord.ui.button(label="💬General", style=ButtonStyle.secondary, custom_id="general")
+    @discord.ui.button(label="💬 General", style=ButtonStyle.secondary, custom_id="general")
     async def general_button(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
-    @discord.ui.button(label="💰Economy", style=ButtonStyle.success, custom_id="economy")
+    @discord.ui.button(label="💰 Economy", style=ButtonStyle.success, custom_id="economy")
     async def economy_button(self, interaction: Interaction, button: Button):
         await interaction.response.edit_message(embed=self.embeds[1], view=self)
 
-    @discord.ui.button(label="🛠️Staff", style=ButtonStyle.danger, custom_id="staff")
+    @discord.ui.button(label="🛠️ Staff", style=ButtonStyle.danger, custom_id="staff", row=1)
     async def staff_button(self, interaction: Interaction, button: Button):
         if not self.is_staff or len(self.embeds) < 3:
             return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
@@ -1815,6 +1809,8 @@ async def cmds(ctx):
         pages.append(staff)
 
     view = CommandPages(pages, is_staff)
+    if not is_staff:
+        view.remove_item(view.children[-1])
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
