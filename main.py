@@ -332,6 +332,7 @@ async def on_message(message: discord.Message):
         await message.channel.send(f"✅ Welcome back, {message.author.mention}! AFK removed.", delete_after=5)
 
     await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
+    print("[on_message] About to process commands")
     await bot.process_commands(message)
         
 # 3. COMMANDS ==================================================
