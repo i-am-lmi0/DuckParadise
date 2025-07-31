@@ -219,13 +219,14 @@ async def on_ready():
         ]
         await shop_col.insert_many(initial_items)
         print("✅ Shop items added.")
-        
+
 async def ask_duck_gpt(prompt: str) -> str:
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
+
     payload = {
         "model": "z-ai/glm-4.5-air:free",
         "messages": [
@@ -235,21 +236,31 @@ async def ask_duck_gpt(prompt: str) -> str:
         "temperature": 0.7,
         "max_tokens": 300,
         "stop": ["\n\n", "User:", "System:", "Assistant:"]
-
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status != 200:
+    async def fetch_response():
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
                 text = await resp.text()
-                return f"Quack? (error {resp.status}: {text})"
-            data = await resp.json()
-            choices = data.get("choices", [])
-            if not choices:
-                return "Quack?"
-            message = choices[0].get("message", {})
-            content = message.get("content")
-            return content.strip() if content else "Quack?"
+                if resp.status != 200:
+                    return f"Quack? (error {resp.status}: {text})"
+                data = await resp.json()
+                choices = data.get("choices", [])
+                if not choices:
+                    return "🦆 The duck got confused. Try again?"
+                message = choices[0].get("message", {})
+                content = message.get("content")
+                return content.strip() if content else "🦆 The duck went silent. Try again!"
+
+    # First attempt
+    result = await fetch_response()
+
+    # Retry once if it returned a known fallback
+    if result.startswith("🦆"):
+        await asyncio.sleep(1)  # brief pause
+        result = await fetch_response()
+
+    return result
 
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
