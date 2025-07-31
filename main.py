@@ -18,6 +18,7 @@ from collections import defaultdict
 import time
 from dateutil import parser
 from discord import ui
+import traceback
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -115,26 +116,35 @@ async def on_command_error(ctx, error):
 
 async def get_user(guild_id, user_id):
     key = f"{guild_id}-{user_id}"
+    defaults = {
+        "_id": key,
+        "guild": str(guild_id),
+        "user": str(user_id),
+        "wallet": 0,
+        "bank": 0,
+        "inventory": [],
+        "job": None,
+        "job_start": None,
+        "promoted": False,
+        "last_beg": None,
+        "last_fished": None,
+        "last_daily": None
+    }
+
     u = await economy_col.find_one({"_id": key})
     if not u:
-        await economy_col.insert_one({"_id": key, "guild": str(guild_id), "user": str(user_id), "wallet": 0, "bank": 0, "inventory": []})
-        u = await economy_col.find_one({"_id": key})
-    return u
-
-def convert_time(s):
-    try:
-        return int(s[:-1]) * {"s":1,"m":60,"h":3600,"d":86400}[s[-1]]
-    except Exception:
-        return None
-
-async def resolve_member(ctx, arg):
-    try:
-        return await commands.MemberConverter().convert(ctx, arg)
-    except Exception:
-        try:
-            return await ctx.guild.fetch_member(int(arg.strip("<@!>")))
-        except Exception:
-            return None
+        await economy_col.insert_one(defaults)
+        return defaults
+    else:
+        # Ensure any missing fields are added
+        updated = False
+        for k, v in defaults.items():
+            if k not in u:
+                u[k] = v
+                updated = True
+        if updated:
+            await economy_col.update_one({"_id": key}, {"$set": u})
+        return u
 
 def check_target_permission(ctx, member: discord.Member):
     if member == ctx.author:
@@ -544,22 +554,29 @@ async def daily(ctx):
     
 @bot.command()
 async def beg(ctx):
-    data = await get_user(ctx.guild.id, ctx.author.id)
-    now = datetime.now(timezone.utc)
-    last = data.get("last_beg")
+    try:
+        data = await get_user(ctx.guild.id, ctx.author.id)
+        now = datetime.now(timezone.utc)
+        last = data.get("last_beg")
 
-    if last and now - datetime.fromisoformat(last) < timedelta(minutes=15):
-        rem = timedelta(minutes=15) - (now - datetime.fromisoformat(last))
-        return await ctx.send(f"🕒 You can beg again in {rem.seconds // 60} minutes.")
+        if last and now - datetime.fromisoformat(last) < timedelta(minutes=15):
+            rem = timedelta(minutes=15) - (now - datetime.fromisoformat(last))
+            return await ctx.send(f"🕒 You can beg again in {rem.seconds // 60} minutes.")
 
-    amount = random.randint(50, 200)
-    donor = random.choice(["thetruck", "CuteBatak"])
+        amount = random.randint(50, 200)
+        donor = random.choice(["thetruck", "CuteBatak"])
 
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": data["wallet"] + amount, "last_beg": now.isoformat()}}
-    )
-    await ctx.send(f"🙇 {donor} was kind enough to donate **{amount} coins** to you!")
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$set": {"wallet": data["wallet"] + amount, "last_beg": now.isoformat()}}
+        )
+        await ctx.send(f"🙇 {donor} was kind enough to donate **{amount} coins** to you!")
+
+    except Exception as e:
+        print(f"[ERROR] beg command: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        await ctx.send("⚠️ Something went wrong while begging.")
     
 @bot.command(aliases=["dep"])
 async def deposit(ctx, amount: str):
@@ -909,21 +926,23 @@ async def choosejob(ctx):
 @commands.cooldown(1, 43200, commands.BucketType.user)  # 12-hour cooldown
 async def work(ctx):
     try:
+        print("[WORK] Command triggered")
+    
         data = await get_user(ctx.guild.id, ctx.author.id)
+        print("[WORK] User data:", data)
+    
         job = data.get("job")
-
         if not job:
-            # Get server prefix for help message
             doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
             prefix = doc.get("prefix", "?") if doc else "?"
             return await ctx.send(f"❌ You don’t have a job yet! Use `{prefix}choosejob` to get one.")
-
-        # Inventory check for developer job
+    
         inventory = data.get("inventory", [])
+        print(f"[WORK] Job: {job}, Inventory: {inventory}")
+    
         if job == "developer" and "laptop" not in inventory:
             return await ctx.send("💻 You need a **laptop** to work as a developer!")
-
-        # Job time & promotion logic
+    
         job_start_raw = data.get("job_start")
         promoted = data.get("promoted", False)
         if job_start_raw:
@@ -931,8 +950,14 @@ async def work(ctx):
             days_worked = (datetime.now(timezone.utc) - job_start).days
         else:
             days_worked = 0
-
-        # Payouts and job descriptions
+    
+        print(f"[WORK] Days worked: {days_worked}, Promoted: {promoted}")
+    
+        # Promotion chance
+        if not promoted and days_worked >= 7 and random.random() <= 0.001:
+            promoted = True
+            await ctx.send("🎉 **Congratulations – You've been PROMOTED!** You now earn more in your job!")
+    
         base_payouts = {
             "developer": (300, 600),
             "duck": (200, 500)
@@ -945,18 +970,13 @@ async def work(ctx):
             "developer": "You wrote some killer code 💻",
             "duck": "You danced and quacked around the duck pond 🦆"
         }
-
-        # Promotion chance after 7 days
-        if not promoted and days_worked >= 7 and random.random() <= 0.001:
-            promoted = True
-            await ctx.send("🎉 **Congratulations – You've been PROMOTED!** You now earn more in your job!")
-
-        # Payout calculation
+    
         low, high = promo_payouts[job] if promoted else base_payouts[job]
         earned = random.randint(low, high)
         new_wallet = data.get("wallet", 0) + earned
-
-        # Save changes to Mongo
+    
+        print(f"[WORK] Earned: {earned}, New Wallet: {new_wallet}")
+    
         await economy_col.update_one(
             {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
             {"$set": {
@@ -965,11 +985,16 @@ async def work(ctx):
             }},
             upsert=True
         )
-
+    
         await ctx.send(
             f"🧾 {descriptions.get(job, 'You worked hard!')}\n"
             f"💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!"
         )
+    
+    except Exception as e:
+        await ctx.send("⚠️ Something went wrong while processing your work. Please try again.")
+        print(f"[ERROR] work command: {type(e).__name__} - {e}")
+        traceback.print_exc()
 
     except Exception as e:
         # Catch any unexpected errors and log them
