@@ -331,8 +331,8 @@ async def on_message(message: discord.Message):
         await afk_col.delete_one({"_id": afk_key})
         await message.channel.send(f"✅ Welcome back, {message.author.mention}! AFK removed.", delete_after=5)
 
-    await bot.process_commands(message)
     await sticky_col.create_index([("guild", 1), ("channel", 1)], unique=True)
+    await bot.process_commands(message)
         
 # 3. COMMANDS ==================================================
 @bot.command()
@@ -873,7 +873,7 @@ class JobPicker(ui.View):
     async def interaction_check(self, interaction):
         return interaction.user == self.ctx.author
 
-    @ui.button(label="Developer 🧑‍💻", style=discord.ButtonStyle.blurple)
+    @ui.button(label="Developer 🧑‍💻", style=ButtonStyle.blurple)
     async def dev_button(self, interaction: discord.Interaction, button: ui.Button):
         await self.set_job(interaction, "developer")
 
@@ -1036,25 +1036,31 @@ async def fish(ctx):
     # Check for cooldown
     last_fished = data.get("last_fished")
     now = datetime.now(timezone.utc)
+    
     if last_fished:
-        # Convert to datetime if stored as string (in case it is)
         if isinstance(last_fished, str):
-            last_fished = datetime.fromisoformat(last_fished)
-
-        delta = now - last_fished
-        if delta < timedelta(hours=3):
-            hours_remaining = round((timedelta(hours=3) - delta).total_seconds() / 3600, 2)
-            return await ctx.send(f"🕒 You can fish again in {hours_remaining} hours.")
+            try:
+                last_fished = datetime.fromisoformat(last_fished)
+            except Exception as e:
+                print(f"[fish error] Invalid last_fished: {e}")
+                last_fished = None
+    
+        if last_fished:
+            delta = now - last_fished
+            if delta < timedelta(hours=3):
+                hours_remaining = round((timedelta(hours=3) - delta).total_seconds() / 3600, 2)
+                return await ctx.send(f"🕒 You can fish again in {hours_remaining} hours.")
 
     # Perform the fishing
     catch = random.choice(fishes)
     data["wallet"] += catch[1]
 
+    # Save to DB
     await economy_col.update_one(
         {"_id": user_id},
         {"$set": {
             "wallet": data["wallet"],
-            "last_fished": now
+            "last_fished": now.isoformat()
         }}
     )
 
@@ -1719,20 +1725,26 @@ async def pun(ctx):
 async def serverinfo(ctx):
     await ctx.send(f"Server: {ctx.guild.name}\n👥 Members: {ctx.guild.member_count}\n🆔 ID: {ctx.guild.id}")
 
-class CommandPages(View):
+class CommandPages(discord.ui.View):
     def __init__(self, embeds, is_staff: bool):
-        super().__init__(timeout=None)
+        super().__init__(timeout=300)
         self.embeds = embeds
         self.is_staff = is_staff
 
-        # Add buttons
-        self.add_item(Button(label="💬 General", style=ButtonStyle.secondary, custom_id="general"))
-        self.add_item(Button(label="💰 Economy", style=ButtonStyle.success, custom_id="economy"))
-        if is_staff:
-            self.add_item(Button(label="🛠️ Staff", style=ButtonStyle.danger, custom_id="staff"))
+    @discord.ui.button(label="💬 General", style=discord.ButtonStyle.secondary, custom_id="general")
+    async def general_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
-    async def interaction_check(self, interaction: Interaction) -> bool:
-        return True
+    @discord.ui.button(label="💰 Economy", style=discord.ButtonStyle.success, custom_id="economy")
+    async def economy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=self.embeds[1], view=self)
+
+    @discord.ui.button(label="🛠️ Staff", style=discord.ButtonStyle.danger, custom_id="staff")
+    async def staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.is_staff and len(self.embeds) >= 3:
+            await interaction.response.edit_message(embed=self.embeds[2], view=self)
+        else:
+            await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
 
     async def interaction_handler(self, interaction: Interaction):
         custom_id = interaction.data.get("custom_id")
@@ -1840,13 +1852,12 @@ async def cmds(ctx):
                 staff_embed.add_field(name=format_field(name, value)[0], value=value, inline=False)
             pages.append(staff_embed)
 
-    view = CommandPages(pages, is_staff)
-
     async def on_interaction(interaction: Interaction):
         await view.interaction_handler(interaction)
 
     view.on_interaction = on_interaction
 
+    view = CommandPages(pages, is_staff)
     await ctx.send(embed=pages[0], view=view)
 
 @bot.command()
