@@ -227,7 +227,7 @@ async def ask_duck_gpt(prompt: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "anthropic/claude-sonnet-4",
+        "model": "z-ai/glm-4.5-air:free",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
