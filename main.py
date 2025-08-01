@@ -922,105 +922,75 @@ async def choosejob(ctx):
         view=view
     )
 
-#@bot.command(name="work")
-#@commands.cooldown(1, 43200, commands.BucketType.user)  # 12-hour cooldown
-#async def work(ctx):
-#    try:
-#        print("[WORK] Command triggered")
-#    
-#        data = await get_user(ctx.guild.id, ctx.author.id)
-#        print("[WORK] User data:", data)
-#    
-#        job = data.get("job")
-#        if not job:
-#            doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
-#            prefix = doc.get("prefix", "?") if doc else "?"
-#            return await ctx.send(f"❌ You don’t have a job yet! Use `{prefix}choosejob` to get one.")
-#    
-#        inventory = data.get("inventory", [])
-#        print(f"[WORK] Job: {job}, Inventory: {inventory}")
-#    
-#        if job == "developer" and "laptop" not in inventory:
-#            return await ctx.send("💻 You need a **laptop** to work as a developer!")
-#    
-#        job_start_raw = data.get("job_start")
-#        promoted = data.get("promoted", False)
-#        if job_start_raw:
-#            job_start = datetime.fromisoformat(job_start_raw) if isinstance(job_start_raw, str) else job_start_raw
-#            days_worked = (datetime.now(timezone.utc) - job_start).days
-#        else:
-#            days_worked = 0
-#    
-#        print(f"[WORK] Days worked: {days_worked}, Promoted: {promoted}")
-#    
-        # Promotion chance
-#        if not promoted and days_worked >= 7 and random.random() <= 0.001:
-#            promoted = True
-#            await ctx.send("🎉 **Congratulations – You've been PROMOTED!** You now earn more in your job!")
-#    
-#        base_payouts = {
-#            "developer": (300, 600),
-#            "duck": (200, 500)
-#        }
-#        promo_payouts = {
-#            "developer": (600, 1000),
-#            "duck": (500, 900)
-#        }
-#        descriptions = {
-#            "developer": "You wrote some killer code 💻",
-#            "duck": "You danced and quacked around the duck pond 🦆"
-#        }
-#    
-#        low, high = promo_payouts[job] if promoted else base_payouts[job]
-#        earned = random.randint(low, high)
-#        new_wallet = data.get("wallet", 0) + earned
-#    
-#        print(f"[WORK] Earned: {earned}, New Wallet: {new_wallet}")
-#    
-#        await economy_col.update_one(
-#            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-#            {"$set": {
-#                "wallet": new_wallet,
-#                "promoted": promoted
-#            }},
-#            upsert=True
-#        )
-#    
-#        await ctx.send(
-#            f"🧾 {descriptions.get(job, 'You worked hard!')}\n"
-#            f"💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!"
-#        )
-#    
-#    except Exception as e:
-#        await ctx.send("⚠️ Something went wrong while processing your work. Please try again.")
-#        print(f"[ERROR] work command: {type(e).__name__} - {e}")
-#        traceback.print_exc()
-
 @bot.command(name="work")
-@commands.cooldown(1, 43200, commands.BucketType.user)
+@commands.cooldown(1, 43200, commands.BucketType.user)  # 12-hour cooldown
 async def work(ctx):
     try:
-        print("[WORK] Starting work for user:", ctx.author.id)
-        user_id = f"{ctx.guild.id}-{ctx.author.id}"
         data = await get_user(ctx.guild.id, ctx.author.id)
-        print("[WORK] Data:", data)
-
         job = data.get("job")
-        print("[WORK] job:", job)
+
         if not job:
-            return await ctx.send("No job found—use choosejob first.")
+            doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
+            prefix = doc.get("prefix", "?") if doc else "?"
+            return await ctx.send(f"❌ You don’t have a job yet! Use `{prefix}choosejob` to get one.")
 
-        # Continue simpler logic
-        earned = 100
-        print("[WORK] Earned:", earned)
+        inventory = data.get("inventory", [])
+        if job == "developer" and "laptop" not in inventory:
+            return await ctx.send("💻 You need a **laptop** to work as a developer!")
 
-        await economy_col.update_one({"_id": user_id}, {"$inc": {"wallet": earned}}, upsert=True)
-        await ctx.send(f"You earned {earned} coins for working as {job}!")
+        job_start_raw = data.get("job_start")
+        promoted = data.get("promoted", False)
+
+        days_worked = 0
+        if isinstance(job_start_raw, str):
+            try:
+                job_start = datetime.fromisoformat(job_start_raw)
+                days_worked = (datetime.now(timezone.utc) - job_start).days
+            except Exception as e:
+                print(f"[WORK ERROR] Invalid job_start format: {e}")
+
+        if job not in ["developer", "duck"]:
+            return await ctx.send("⚠️ You have an invalid job. Please use `?choosejob` to pick a valid one.")
+
+        if not promoted and days_worked >= 7 and random.random() <= 0.001:
+            promoted = True
+            await ctx.send("🎉 **Congratulations – You've been PROMOTED!** You now earn more in your job!")
+
+        base_payouts = {
+            "developer": (300, 600),
+            "duck": (200, 500)
+        }
+        promo_payouts = {
+            "developer": (600, 1000),
+            "duck": (500, 900)
+        }
+        descriptions = {
+            "developer": "You wrote some killer code 💻",
+            "duck": "You danced and quacked around the duck pond 🦆"
+        }
+
+        low, high = promo_payouts[job] if promoted else base_payouts[job]
+        earned = random.randint(low, high)
+        new_wallet = data.get("wallet", 0) + earned
+
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$set": {
+                "wallet": new_wallet,
+                "promoted": promoted
+            }},
+            upsert=True
+        )
+
+        await ctx.send(
+            f"🧾 {descriptions.get(job, 'You worked hard!')}\n"
+            f"💰 You earned **{earned} coins** as a {'promoted ' if promoted else ''}{job}!"
+        )
 
     except Exception as e:
-        await ctx.send("⚠️ Oops—error in work command.")
-        print("[ERROR work]", type(e).__name__, str(e))
-        import traceback; traceback.print_exc()
+        await ctx.send("⚠️ Something went wrong while processing your work. Please try again.")
+        print(f"[ERROR] work command: {type(e).__name__} - {e}")
+        traceback.print_exc()
 
 @work.error
 async def work_error(ctx, error):
