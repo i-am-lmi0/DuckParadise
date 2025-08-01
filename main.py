@@ -996,11 +996,6 @@ async def work(ctx):
         print(f"[ERROR] work command: {type(e).__name__} - {e}")
         traceback.print_exc()
 
-    except Exception as e:
-        # Catch any unexpected errors and log them
-        await ctx.send("⚠️ Something went wrong while processing your work. Please try again.")
-        print(f"[ERROR] work command: {type(e).__name__} - {e}")
-
 @work.error
 async def work_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
