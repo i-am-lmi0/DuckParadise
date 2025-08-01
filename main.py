@@ -112,7 +112,7 @@ async def on_command_error(ctx, error):
     elif isinstance(error, commands.CommandNotFound):
         return await ctx.send("⚠️ That command doesn't exist.")
     else:
-        print(f"Unexpected error: {error}")
+        return await ctx.send(f"An unexpected error occured, contact thetruck: {error}")
 
 async def get_user(guild_id, user_id):
     key = f"{guild_id}-{user_id}"
@@ -537,20 +537,27 @@ async def balance(ctx, member: discord.Member = None):
     
 @bot.command()
 async def daily(ctx):
-    data = await get_user(ctx.guild.id, ctx.author.id)
-    now = datetime.now(timezone.utc)
-    last = data.get("last_daily")
+    try:
+        data = await get_user(ctx.guild.id, ctx.author.id)
+        now = datetime.now(timezone.utc)
+        last = data.get("last_daily")
+    
+        if last and now - datetime.fromisoformat(last) < timedelta(hours=24):
+            rem = timedelta(hours=24) - (now - datetime.fromisoformat(last))
+            return await ctx.send(f"🕒 Claim again in {rem.seconds//3600}h {(rem.seconds//60)%60}m")
+    
+        new_balance = data['wallet'] + 500
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$set": {"wallet": new_balance, "last_daily": now.isoformat()}}
+        )
+        await ctx.send("✅ You claimed your daily reward of 500 coins!")
 
-    if last and now - datetime.fromisoformat(last) < timedelta(hours=24):
-        rem = timedelta(hours=24) - (now - datetime.fromisoformat(last))
-        return await ctx.send(f"🕒 Claim again in {rem.seconds//3600}h {(rem.seconds//60)%60}m")
-
-    new_balance = data['wallet'] + 500
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"wallet": new_balance, "last_daily": now.isoformat()}}
-    )
-    await ctx.send("✅ You claimed your daily reward of 500 coins!")
+    except Exception as e:
+        print(f"[ERROR] beg command: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        await ctx.send("⚠️ Something went wrong while collecting your daily. Contact thetruck.")
     
 @bot.command()
 async def beg(ctx):
@@ -576,7 +583,7 @@ async def beg(ctx):
         print(f"[ERROR] beg command: {type(e).__name__} - {e}")
         import traceback
         traceback.print_exc()
-        await ctx.send("⚠️ Something went wrong while begging.")
+        await ctx.send("⚠️ Something went wrong while begging. Contact thetruck.")
     
 @bot.command(aliases=["dep"])
 async def deposit(ctx, amount: str):
@@ -790,7 +797,7 @@ async def coinflip_error(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("❌ You must specify an amount. Example: `.coinflip 100`")
     else:
-        await ctx.send(f"⚠️ Error: {type(error).__name__}: {error}")
+        await ctx.send(f"⚠️ Error, contact thetruck: {type(error).__name__}: {error}")
 
 @bot.command()
 async def lottery(ctx):
@@ -988,7 +995,7 @@ async def work(ctx):
         )
 
     except Exception as e:
-        await ctx.send("⚠️ Something went wrong while processing your work. Please try again.")
+        await ctx.send("⚠️ Something went wrong while processing your work. Contact thetruck.")
         print(f"[ERROR] work command: {type(e).__name__} - {e}")
         traceback.print_exc()
 
@@ -1000,7 +1007,7 @@ async def work_error(ctx, error):
         minutes, _ = divmod(remainder, 60)
         return await ctx.send(f"🕒 You can work again in {hours}h {minutes}m.")
     else:
-        await ctx.send("⚠️ An unexpected error occurred.")
+        await ctx.send("⚠️ An unexpected error occurred. Contact thetruck.")
         raise error
 
 @bot.command()
@@ -1020,7 +1027,7 @@ async def jobstatus(ctx):
         job_start = datetime.fromisoformat(job_start_str)
     except Exception as e:
         print(f"[jobstatus error] Failed to parse job_start: {e}")
-        return await ctx.send("⚠️ There was an error reading your job data. Please try again or contact support.")
+        return await ctx.send("⚠️ There was an error reading your job data. Contact thetruck..")
 
     now = datetime.now(timezone.utc)
     delta = now - job_start
@@ -1045,20 +1052,19 @@ async def jobstatus(ctx):
 async def fish(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
     data = await get_user(ctx.guild.id, ctx.author.id)
+    last_fished = data.get("last_fished")
+    now = datetime.now(timezone.utc)
 
     # Check for fishing rod
     if "fishing rod" not in data.get("inventory", []):
         return await ctx.send("🎣 You need a fishing rod to fish!")
-
-    # Check for cooldown
-    last_fished = data.get("last_fished")
-    now = datetime.now(timezone.utc)
     
     if last_fished:
         if isinstance(last_fished, str):
             try:
                 last_fished = datetime.fromisoformat(last_fished)
             except Exception as e:
+                return await ctx.send("⚠️ Error fishing. Contact thetruck.")
                 print(f"[fish error] Invalid last_fished: {e}")
                 last_fished = None
     
@@ -1326,7 +1332,7 @@ async def duckquiz_error(ctx, error):
         mins = int(error.retry_after // 60)
         await ctx.send(f"🕒 Please wait {mins} more minute(s) before doing the quiz again.")
     else:
-        await ctx.send("⚠️ An error occurred, please try again.")
+        await ctx.send("⚠️ An error occurred. Contact thetruck")
     
 @bot.command()
 async def afk(ctx, *, reason="AFK"):
@@ -1860,14 +1866,14 @@ async def cmds(ctx):
             ("?delitem <item_name>", "Remove an item from the shop")
         ]
 
-        for i in range(0, len(staff_commands), 25):
-            staff_embed = discord.Embed(
-                title="🛠️ Staff Commands" + (f" (Page {i//25 + 1})" if i > 0 else ""),
-                color=discord.Color.dark_red()
-            )
-            for name, value in staff_commands[i:i+25]:
-                staff_embed.add_field(name=format_field(name, value)[0], value=value, inline=False)
-            pages.append(staff_embed)
+    for i in range(0, len(staff_commands), 25):
+        staff_embed = discord.Embed(
+            title="🛠️ Staff Commands" + (f" (Page {i//25 + 1})" if i > 0 else ""),
+            color=discord.Color.dark_red()
+        )
+        for name, value in staff_commands[i:i+25]:
+            staff_embed.add_field(name=format_field(name, value)[0], value=value, inline=False)
+        pages.append(staff_embed)
 
     async def on_interaction(interaction: Interaction):
         await view.interaction_handler(interaction)
