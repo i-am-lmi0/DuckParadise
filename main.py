@@ -1008,7 +1008,6 @@ async def work_error(ctx, error):
         return await ctx.send(f"🕒 You can work again in {hours}h {minutes}m.")
     else:
         await ctx.send("⚠️ An unexpected error occurred. Contact thetruck.")
-        raise error
 
 @bot.command()
 async def jobstatus(ctx):
