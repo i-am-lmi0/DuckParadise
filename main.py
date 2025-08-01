@@ -554,7 +554,7 @@ async def daily(ctx):
         await ctx.send("✅ You claimed your daily reward of 500 coins!")
 
     except Exception as e:
-        print(f"[ERROR] beg command: {type(e).__name__} - {e}")
+        print(f"[ERROR] daily command: {type(e).__name__} - {e}")
         import traceback
         traceback.print_exc()
         await ctx.send("⚠️ Something went wrong while collecting your daily. Contact thetruck.")
@@ -1049,44 +1049,50 @@ async def jobstatus(ctx):
 
 @bot.command()
 async def fish(ctx):
-    user_id = f"{ctx.guild.id}-{ctx.author.id}"
-    data = await get_user(ctx.guild.id, ctx.author.id)
-    last_fished = data.get("last_fished")
-    now = datetime.now(timezone.utc)
-
-    # Check for fishing rod
-    if "fishing rod" not in data.get("inventory", []):
-        return await ctx.send("🎣 You need a fishing rod to fish!")
+    try:
+        user_id = f"{ctx.guild.id}-{ctx.author.id}"
+        data = await get_user(ctx.guild.id, ctx.author.id)
+        last_fished = data.get("last_fished")
+        now = datetime.now(timezone.utc)
     
-    if last_fished:
-        if isinstance(last_fished, str):
-            try:
-                last_fished = datetime.fromisoformat(last_fished)
-            except Exception as e:
-                return await ctx.send("⚠️ Error fishing. Contact thetruck.")
-                print(f"[fish error] Invalid last_fished: {e}")
-                last_fished = None
-    
+        # Check for fishing rod
+        if "fishing rod" not in data.get("inventory", []):
+            return await ctx.send("🎣 You need a fishing rod to fish!")
+        
         if last_fished:
-            delta = now - last_fished
-            if delta < timedelta(hours=3):
-                hours_remaining = round((timedelta(hours=3) - delta).total_seconds() / 3600, 2)
-                return await ctx.send(f"🕒 You can fish again in {hours_remaining} hours.")
+            if isinstance(last_fished, str):
+                try:
+                    last_fished = datetime.fromisoformat(last_fished)
+                except Exception as e:
+                    return await ctx.send("⚠️ Error fishing. Contact thetruck.")
+                    print(f"[fish error] Invalid last_fished: {e}")
+                    last_fished = None
+        
+            if last_fished:
+                delta = now - last_fished
+                if delta < timedelta(hours=3):
+                    hours_remaining = round((timedelta(hours=3) - delta).total_seconds() / 3600, 2)
+                    return await ctx.send(f"🕒 You can fish again in {hours_remaining} hours.")
+    
+        # Perform the fishing
+        catch = random.choice(fishes)
+        data["wallet"] += catch[1]
+    
+        # Save to DB
+        await economy_col.update_one(
+            {"_id": user_id},
+            {"$set": {
+                "wallet": data["wallet"],
+                "last_fished": now.isoformat()
+            }}
+        )
+    
+        await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
 
-    # Perform the fishing
-    catch = random.choice(fishes)
-    data["wallet"] += catch[1]
-
-    # Save to DB
-    await economy_col.update_one(
-        {"_id": user_id},
-        {"$set": {
-            "wallet": data["wallet"],
-            "last_fished": now.isoformat()
-        }}
-    )
-
-    await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
+    except Exception as e:
+        await ctx.send("⚠️ Something went wrong while fishing. Contact thetruck.")
+        print(f"[ERROR] fish command: {type(e).__name__} - {e}")
+        traceback.print_exc()
 
 @fish.error
 async def fish_error(ctx, error):
