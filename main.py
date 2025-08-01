@@ -112,7 +112,7 @@ async def on_command_error(ctx, error):
     elif isinstance(error, commands.CommandNotFound):
         return await ctx.send("⚠️ That command doesn't exist.")
     else:
-        return await ctx.send(f"An unexpected error occured, contact thetruck: {error}")
+        print(f"An unexpected error occured, contact thetruck: {error}")
 
 async def get_user(guild_id, user_id):
     key = f"{guild_id}-{user_id}"
