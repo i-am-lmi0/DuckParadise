@@ -1764,14 +1764,16 @@ class CommandPages(discord.ui.View):
         self.embeds = embeds
         self.is_staff = is_staff
         self.current = 0
-        self.staff_start = 2  # assume first two pages are general & economy
-        self.total = len(embeds)
+        self.staff_start = 2  # index where first staff embed appears
+        self.staff_pages = len(embeds) - self.staff_start if self.is_staff else 0
 
     @discord.ui.button(label="⏮ Prev", style=discord.ButtonStyle.secondary)
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.current >= self.staff_start + 1:
             self.current -= 1
             await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
+        else:
+            await interaction.response.defer()  # acknowledge interaction
 
     @discord.ui.button(label="💬 General", style=discord.ButtonStyle.secondary)
     async def general_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1785,16 +1787,18 @@ class CommandPages(discord.ui.View):
 
     @discord.ui.button(label="🛠️ Staff", style=discord.ButtonStyle.danger)
     async def staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.is_staff or self.total < self.staff_start + 1:
+        if not self.is_staff or self.staff_pages < 1:
             return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
         self.current = self.staff_start
         await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
 
     @discord.ui.button(label="⏭ Next", style=discord.ButtonStyle.secondary)
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current < self.total - 1:
+        if self.current < len(self.embeds) - 1 and self.current >= self.staff_start:
             self.current += 1
             await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
+        else:
+            await interaction.response.defer()
 
     async def on_timeout(self):
         for child in self.children:
