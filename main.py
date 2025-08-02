@@ -232,8 +232,6 @@ async def on_ready():
         await shop_col.insert_many(initial_items)
         print("✅ Shop items added.")
 
-import aiohttp
-
 # Create a shared aiohttp ClientSession for reuse
 session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
 
@@ -293,17 +291,20 @@ async def ask_duck_gpt(ctx, prompt: str) -> str:
             "max_tokens": 300,
             "stop": ["\n\n", "User:", "System:", "Assistant:"]
         }
+
         try:
-            async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload) as resp:
-                text = await resp.text()
-                if resp.status != 200:
-                    return None, f"[{model_name}] HTTP {resp.status}"
-                data = await resp.json()
-                choices = data.get("choices", [])
-                if not choices:
-                    return None, "No choices in response"
-                content = choices[0].get("message", {}).get("content")
-                return (content.strip(), None) if content else (None, "Empty content")
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload) as resp:
+                    text = await resp.text()
+                    if resp.status != 200:
+                        return None, f"[{model_name}] HTTP {resp.status}"
+                    data = await resp.json()
+                    choices = data.get("choices", [])
+                    if not choices:
+                        return None, "No choices in response"
+                    content = choices[0].get("message", {}).get("content")
+                    return (content.strip(), None) if content else (None, "Empty content")
         except asyncio.TimeoutError:
             return None, f"[{model_name}] Request timed out"
         except Exception as e:
@@ -2008,7 +2009,7 @@ async def cmds(ctx):
         ("?lottery", "Join the lottery"),
         ("?mysterybox", "Open a mystery box"),
         ("?choosejob", "Choose your dream job"),
-        ("?jobstatus", "Check your next promotion")
+        ("?jobstatus", "Check your next promotion"),
         ("?crime", "Attempt a risky crime to earn coins.")
     ]:
         economy.add_field(name=format_field(name, value)[0], value=value, inline=False)
