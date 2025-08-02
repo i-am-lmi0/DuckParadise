@@ -1814,7 +1814,7 @@ class CommandPages(discord.ui.View):
         await interaction.response.edit_message(embed=self.embeds[2], view=self)
 
     # Prev / Next buttons defined but not displayed initially
-    @discord.ui.button(label="⏮ Prev", style=discord.ButtonStyle.secondary, custom_id="prev", disabled=True)
+    @discord.ui.button(label="⏮ Prev", style=discord.ButtonStyle.secondary, custom_id="prev")
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         start, _ = self.get_section_bounds()
         if self.current > start:
@@ -1823,8 +1823,8 @@ class CommandPages(discord.ui.View):
             await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
         else:
             await interaction.response.defer()
-
-    @discord.ui.button(label="⏭ Next", style=discord.ButtonStyle.secondary, custom_id="next", disabled=True)
+    
+    @discord.ui.button(label="⏭ Next", style=discord.ButtonStyle.secondary, custom_id="next")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         _, end = self.get_section_bounds()
         if self.current < end - 1:
