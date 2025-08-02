@@ -231,46 +231,46 @@ async def on_ready():
         print("✅ Shop items added.")
 
 async def ask_duck_gpt(prompt: str) -> str:
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    models = [
+        "z-ai/glm-4.5-air:free",  # Primary model
+        "openchat/openchat-3.5-1210:free"  # Backup free model
+    ]
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    payload = {
-        "model": "z-ai/glm-4.5-air:free",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 300,
-        "stop": ["\n\n", "User:", "System:", "Assistant:"]
-    }
+    async def fetch_response(model_name):
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 300,
+            "stop": ["\n\n", "User:", "System:", "Assistant:"]
+        }
 
-    async def fetch_response():
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
+            async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload) as resp:
                 text = await resp.text()
                 if resp.status != 200:
-                    return f"Quack? (error {resp.status}: {text})"
+                    return None, f"[{model_name}] Error {resp.status}: {text}"
                 data = await resp.json()
-                choices = data.get("choices", [])
-                if not choices:
-                    return "🦆 The duck got confused. Try again?"
-                message = choices[0].get("message", {})
-                content = message.get("content")
-                return content.strip() if content else "🦆 The duck went silent. Try again!"
+                content = data.get("choices", [{}])[0].get("message", {}).get("content")
+                return (content.strip(), None) if content else (None, "Empty response")
 
-    # First attempt
-    result = await fetch_response()
+    # Try each model in order
+    for model in models:
+        content, error = await fetch_response(model)
+        if content:
+            return content
+        else:
+            print(f"[DuckGPT Fallback] {model} failed: {error}")
 
-    # Retry once if it returned a known fallback
-    if result.startswith("🦆"):
-        await asyncio.sleep(1)  # brief pause
-        result = await fetch_response()
-
-    return result
+    return "🦆 The duck is having a nap. Try again later!"
 
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
