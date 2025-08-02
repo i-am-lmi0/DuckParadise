@@ -1764,41 +1764,83 @@ class CommandPages(discord.ui.View):
         self.embeds = embeds
         self.is_staff = is_staff
         self.current = 0
-        self.staff_start = 2  # index where first staff embed appears
-        self.staff_pages = len(embeds) - self.staff_start if self.is_staff else 0
 
-    @discord.ui.button(label="⏮ Prev", style=discord.ButtonStyle.secondary)
-    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current >= self.staff_start + 1:
-            self.current -= 1
-            await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
+        self.section_starts = {0: "General", 1: "Economy"}
+        if is_staff and len(embeds) > 2:
+            self.section_starts[2] = "Staff"
+
+        # Always add section navigation buttons
+        self.add_section_button(0, "💬 General")
+        self.add_section_button(1, "💰 Economy")
+        if is_staff:
+            self.add_section_button(2, "🛠️ Staff")
+
+        # Placeholder for Prev/Next buttons
+        self.prev_btn = discord.ui.Button(label="⏮ Prev", style=discord.ButtonStyle.secondary, custom_id="prev")
+        self.next_btn = discord.ui.Button(label="⏭ Next", style=discord.ButtonStyle.secondary, custom_id="next")
+
+        # Help button to explain navigation
+        self.help_btn = discord.ui.Button(label="❓ Help", style=discord.ButtonStyle.primary, custom_id="help")
+        self.add_item(self.help_btn)
+
+        self._add_page_buttons()
+
+    def add_section_button(self, idx, label):
+        btn = discord.ui.Button(label=label, style=discord.ButtonStyle.secondary, custom_id=f"sec{idx}")
+        self.add_item(btn)
+
+    def _add_page_buttons(self):
+        for btn in (self.prev_btn, self.next_btn):
+            if btn in self.children:
+                self.remove_item(btn)
+
+        sec_idx = self.current
+        next_sections = sorted([i for i in self.section_starts if i > sec_idx])
+        end = next_sections[0] if next_sections else len(self.embeds)
+        length = end - sec_idx
+
+        if length <= 1:
+            return
+
+        if self.current == sec_idx:
+            self.add_item(self.next_btn)
+        elif self.current == end - 1:
+            self.add_item(self.prev_btn)
         else:
-            await interaction.response.defer()  # acknowledge interaction
+            self.add_item(self.prev_btn)
+            self.add_item(self.next_btn)
 
-    @discord.ui.button(label="💬 General", style=discord.ButtonStyle.secondary)
-    async def general_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.current = 0
-        await interaction.response.edit_message(embed=self.embeds[0], view=self)
+    @discord.ui.button(custom_id="dummy", style=discord.ButtonStyle.secondary, label=" ", disabled=True)
+    async def dummy(self, interaction, button): pass
 
-    @discord.ui.button(label="💰 Economy", style=discord.ButtonStyle.success)
-    async def economy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.current = 1
-        await interaction.response.edit_message(embed=self.embeds[1], view=self)
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
 
-    @discord.ui.button(label="🛠️ Staff", style=discord.ButtonStyle.danger)
-    async def staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.is_staff or self.staff_pages < 1:
-            return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
-        self.current = self.staff_start
-        await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
-
-    @discord.ui.button(label="⏭ Next", style=discord.ButtonStyle.secondary)
-    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current < len(self.embeds) - 1 and self.current >= self.staff_start:
+    async def interaction_handler(self, interaction: discord.Interaction):
+        cid = interaction.data.get("custom_id", "")
+        if cid.startswith("sec"):
+            self.current = int(cid[3:])
+        elif cid == "next":
             self.current += 1
-            await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
+        elif cid == "prev":
+            self.current -= 1
+        elif cid == "help":
+            await interaction.response.send_message(
+                "**Navigation Instructions:**\n"
+                "• 💬 General: Show general commands\n"
+                "• 💰 Economy: Show economy commands\n"
+                + ("• 🛠️ Staff: Show staff commands\n" if self.is_staff else "") +
+                "• ⏮ Prev / ⏭ Next: Page through sections if multiple pages\n"
+                "• ❓ Help: Show this message",
+                ephemeral=True
+            )
+            return
         else:
             await interaction.response.defer()
+            return
+
+        self._add_page_buttons()
+        await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
 
     async def on_timeout(self):
         for child in self.children:
