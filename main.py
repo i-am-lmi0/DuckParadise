@@ -232,10 +232,6 @@ async def on_ready():
         await shop_col.insert_many(initial_items)
         print("✅ Shop items added.")
 
-# Create a shared aiohttp ClientSession for reuse
-session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
-
-
 async def ask_duck_gpt(ctx, prompt: str) -> str:
     allowed_channel_id = 1370374735594258558
 
