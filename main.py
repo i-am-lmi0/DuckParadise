@@ -223,6 +223,7 @@ session = None
 async def on_ready():
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="thetruck"))
     print(f"🎉 Bot ready — Logged in as {bot.user}")
+    global session
     if session is None:
         session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
 
