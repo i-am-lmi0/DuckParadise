@@ -1763,39 +1763,43 @@ class CommandPages(discord.ui.View):
         super().__init__(timeout=300)
         self.embeds = embeds
         self.is_staff = is_staff
+        self.current = 0
+        self.staff_start = 2  # assume first two pages are general & economy
+        self.total = len(embeds)
 
-    @discord.ui.button(label="💬 General", style=discord.ButtonStyle.secondary, custom_id="general")
+    @discord.ui.button(label="⏮ Prev", style=discord.ButtonStyle.secondary)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current >= self.staff_start + 1:
+            self.current -= 1
+            await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
+
+    @discord.ui.button(label="💬 General", style=discord.ButtonStyle.secondary)
     async def general_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current = 0
         await interaction.response.edit_message(embed=self.embeds[0], view=self)
 
-    @discord.ui.button(label="💰 Economy", style=discord.ButtonStyle.success, custom_id="economy")
+    @discord.ui.button(label="💰 Economy", style=discord.ButtonStyle.success)
     async def economy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current = 1
         await interaction.response.edit_message(embed=self.embeds[1], view=self)
 
-    @discord.ui.button(label="🛠️ Staff", style=discord.ButtonStyle.danger, custom_id="staff")
+    @discord.ui.button(label="🛠️ Staff", style=discord.ButtonStyle.danger)
     async def staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.is_staff and len(self.embeds) >= 3:
-            await interaction.response.edit_message(embed=self.embeds[2], view=self)
-        else:
-            await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
+        if not self.is_staff or self.total < self.staff_start + 1:
+            return await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
+        self.current = self.staff_start
+        await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
 
-    async def interaction_handler(self, interaction: Interaction):
-        custom_id = interaction.data.get("custom_id")
-        if custom_id == "general":
-            await interaction.response.edit_message(embed=self.embeds[0], view=self)
-        elif custom_id == "economy":
-            await interaction.response.edit_message(embed=self.embeds[1], view=self)
-        elif custom_id == "staff":
-            if not self.is_staff or len(self.embeds) < 3:
-                await interaction.response.send_message("❌ You don’t have permission to view staff commands.", ephemeral=True)
-                return
-            await interaction.response.edit_message(embed=self.embeds[2], view=self)
+    @discord.ui.button(label="⏭ Next", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current < self.total - 1:
+            self.current += 1
+            await interaction.response.edit_message(embed=self.embeds[self.current], view=self)
 
     async def on_timeout(self):
         for child in self.children:
             child.disabled = True
 
-bot.remove_command("help")
 @bot.command(aliases=["help"])
 async def cmds(ctx):
     doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
@@ -1806,7 +1810,7 @@ async def cmds(ctx):
     def format_field(name, value):
         return (name.replace("?", prefix), value)
 
-    # GENERAL COMMANDS
+    # General Commands
     general = discord.Embed(title="💬 General Commands", color=discord.Color.blurple())
     for name, value in [
         ("?serverinfo", "View server information"),
@@ -1818,7 +1822,7 @@ async def cmds(ctx):
     ]:
         general.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
-    # ECONOMY COMMANDS
+    # Economy Commands
     economy = discord.Embed(title="💰 Economy Commands", color=discord.Color.green())
     for name, value in [
         ("?balance / ?bal", "Check your balance"),
@@ -1876,19 +1880,14 @@ async def cmds(ctx):
             ("?delitem <item_name>", "Remove an item from the shop")
         ]
 
-    for i in range(0, len(staff_commands), 25):
-        staff_embed = discord.Embed(
-            title="🛠️ Staff Commands" + (f" (Page {i//25 + 1})" if i > 0 else ""),
-            color=discord.Color.dark_red()
-        )
-        for name, value in staff_commands[i:i+25]:
-            staff_embed.add_field(name=format_field(name, value)[0], value=value, inline=False)
-        pages.append(staff_embed)
-
-    async def on_interaction(interaction: Interaction):
-        await view.interaction_handler(interaction)
-
-    view.on_interaction = on_interaction
+        for i in range(0, len(staff_commands), 25):
+            staff_embed = discord.Embed(
+                title="🛠️ Staff Commands" + (f" (Page {i//25 + 1})" if i > 0 else ""),
+                color=discord.Color.dark_red()
+            )
+            for name, value in staff_commands[i:i+25]:
+                staff_embed.add_field(name=format_field(name, value)[0], value=value, inline=False)
+            pages.append(staff_embed)
 
     view = CommandPages(pages, is_staff)
     await ctx.send(embed=pages[0], view=view)
