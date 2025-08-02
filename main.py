@@ -336,8 +336,10 @@ async def on_message(message: discord.Message):
         prompt = message.clean_content.replace(f"<@{bot.user.id}>", "").strip()
         if not prompt:
             prompt = "Quack!"
+
+        ctx = await bot.get_context(message)
         await message.channel.typing()
-        reply = await ask_duck_gpt(prompt)
+        reply = await ask_duck_gpt(ctx, prompt)
         await message.reply(reply)
 
     # STICKY NOTE CONFIG //////////////////
