@@ -1800,6 +1800,7 @@ class CommandPages(discord.ui.View):
         for child in self.children:
             child.disabled = True
 
+bot.remove_command("help")
 @bot.command(aliases=["help"])
 async def cmds(ctx):
     doc = await settings_col.find_one({"guild": str(ctx.guild.id)})
