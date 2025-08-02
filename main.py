@@ -52,6 +52,7 @@ ALLOWED_DUCK_CHANNELS = [1370374736814669845, 1374442889710407741] # for ?duck c
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 SYSTEM_PROMPT = "You are a smart and helpful duck that replies in duck-themed style. The server you are in is called Duck Paradise. Your creator is thetruck. The owner of the server is CuteBatak. Always start with a quack. Keep sentences 3-4 sentences, no more than 4 sentences."
+duck_conversations = {}
 
 ROLE_ID = 1396526875987148982      # for the .duckquiz
 QUIZ_CHANNEL = 1370374735594258558
@@ -231,7 +232,31 @@ async def on_ready():
         await shop_col.insert_many(initial_items)
         print("✅ Shop items added.")
 
-async def ask_duck_gpt(prompt: str) -> str:
+import aiohttp
+
+# Create a shared aiohttp ClientSession for reuse
+session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
+
+
+async def ask_duck_gpt(ctx, prompt: str) -> str:
+    allowed_channel_id = 1370374735594258558
+
+    if ctx.channel.id != allowed_channel_id:
+        return "🦆 Please use this command in the designated DuckGPT channel!"
+
+    user_id = str(ctx.author.id)
+    if user_id not in duck_conversations:
+        duck_conversations[user_id] = []
+
+    duck_conversations[user_id].append({"role": "user", "content": prompt})
+
+    total_tokens = sum(len(msg["content"].split()) * 4 for msg in duck_conversations[user_id])
+    if total_tokens > 1000:
+        duck_conversations[user_id] = []  # reset context
+        duck_conversations[user_id].append({"role": "user", "content": prompt})
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + duck_conversations[user_id]
+
     models = [
         "openrouter/horizon-beta",  # Primary
         "openrouter/horizon-alpha"  # Backup
@@ -247,7 +272,7 @@ async def ask_duck_gpt(prompt: str) -> str:
         "generate art", "make ai art", "draw me", "write a story for me"
     ]
 
-    # Check for misuse
+    lowered = prompt.lower()
     if any(phrase in lowered for phrase in ai_task_keywords):
         await log_action(
             ctx,
@@ -255,7 +280,7 @@ async def ask_duck_gpt(prompt: str) -> str:
             user_id=ctx.author.id,
             action_type="duckgpt_flag"
         )
-        return "🦆 I'm just a talking duck! I can't do your homework for you!."
+        return "🦆 I'm just a talking duck! I can't do your homework or code for you."
 
     async def fetch_response(model_name):
         payload = {
@@ -268,16 +293,23 @@ async def ask_duck_gpt(prompt: str) -> str:
             "max_tokens": 300,
             "stop": ["\n\n", "User:", "System:", "Assistant:"]
         }
-
-        async with aiohttp.ClientSession() as session:
+        try:
             async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload) as resp:
                 text = await resp.text()
                 if resp.status != 200:
-                    return None, f"[{model_name}] Error {resp.status}: {text}"
+                    return None, f"[{model_name}] HTTP {resp.status}"
                 data = await resp.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content")
-                return (content.strip(), None) if content else (None, "Empty response")
+                choices = data.get("choices", [])
+                if not choices:
+                    return None, "No choices in response"
+                content = choices[0].get("message", {}).get("content")
+                return (content.strip(), None) if content else (None, "Empty content")
+        except asyncio.TimeoutError:
+            return None, f"[{model_name}] Request timed out"
+        except Exception as e:
+            return None, f"[{model_name}] Unexpected error: {e}"
 
+    # Try primary then backup model
     for model in models:
         content, error = await fetch_response(model)
         if content:
@@ -285,7 +317,7 @@ async def ask_duck_gpt(prompt: str) -> str:
         else:
             print(f"[DuckGPT Fallback] {model} failed: {error}")
 
-    return "🦆 The duck is having a nap. Try again later!"
+    return "🦆 The duck seems to be napping. Come back later!"
 
 # Store last trigger time per channel
 last_sticky_trigger = defaultdict(float)
