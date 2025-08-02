@@ -19,6 +19,7 @@ import time
 from dateutil import parser
 from discord import ui
 import traceback
+import re
 
 # 1. SETUP ====================================================
 TOKEN = os.environ["DISCORD_TOKEN"]
@@ -232,14 +233,29 @@ async def on_ready():
 
 async def ask_duck_gpt(prompt: str) -> str:
     models = [
-        "openrouter/horizon-beta",  # Primary model
-        "openrouter/horizon-alpha"  # Backup model
+        "openrouter/horizon-beta",  # Primary
+        "openrouter/horizon-alpha"  # Backup
     ]
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
+
+    ai_task_keywords = [
+        "do my homework", "solve this math", "write this code", "can you code",
+        "generate art", "make ai art", "draw me", "write a story for me"
+    ]
+
+    # Check for misuse
+    if any(phrase in lowered for phrase in ai_task_keywords):
+        await log_action(
+            ctx,
+            f"⚠️ Attempted AI misuse: `{prompt}`",
+            user_id=ctx.author.id,
+            action_type="duckgpt_flag"
+        )
+        return "🦆 I'm just a talking duck! I can't do your homework for you!."
 
     async def fetch_response(model_name):
         payload = {
@@ -262,7 +278,6 @@ async def ask_duck_gpt(prompt: str) -> str:
                 content = data.get("choices", [{}])[0].get("message", {}).get("content")
                 return (content.strip(), None) if content else (None, "Empty response")
 
-    # Try each model in order
     for model in models:
         content, error = await fetch_response(model)
         if content:
