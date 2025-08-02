@@ -217,7 +217,7 @@ async def check_expired_mutes():
 async def before_unmute_loop():
     await bot.wait_until_ready()
 
-session = none
+session = None
 
 @bot.event
 async def on_ready():
