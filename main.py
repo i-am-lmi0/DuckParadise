@@ -540,13 +540,20 @@ async def daily(ctx):
     try:
         data = await get_user(ctx.guild.id, ctx.author.id)
         now = datetime.now(timezone.utc)
-        last = data.get("last_daily")
-    
-        if last and now - datetime.fromisoformat(last) < timedelta(hours=24):
-            rem = timedelta(hours=24) - (now - datetime.fromisoformat(last))
-            return await ctx.send(f"🕒 Claim again in {rem.seconds//3600}h {(rem.seconds//60)%60}m")
-    
-        new_balance = data['wallet'] + 500
+
+        last_daily = data.get("last_daily")
+        if last_daily:
+            try:
+                last_time = datetime.fromisoformat(last_daily)
+                if now - last_time < timedelta(hours=24):
+                    remaining = timedelta(hours=24) - (now - last_time)
+                    hours = remaining.seconds // 3600
+                    minutes = (remaining.seconds // 60) % 60
+                    return await ctx.send(f"🕒 Claim again in {hours}h {minutes}m")
+            except Exception as e:
+                print(f"[DAILY] Failed to parse timestamp: {e}")
+
+        new_balance = data.get("wallet", 0) + 500
         await economy_col.update_one(
             {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
             {"$set": {"wallet": new_balance, "last_daily": now.isoformat()}}
@@ -564,18 +571,25 @@ async def beg(ctx):
     try:
         data = await get_user(ctx.guild.id, ctx.author.id)
         now = datetime.now(timezone.utc)
-        last = data.get("last_beg")
 
-        if last and now - datetime.fromisoformat(last) < timedelta(minutes=15):
-            rem = timedelta(minutes=15) - (now - datetime.fromisoformat(last))
-            return await ctx.send(f"🕒 You can beg again in {rem.seconds // 60} minutes.")
+        last_beg = data.get("last_beg")
+        if last_beg:
+            try:
+                last_time = datetime.fromisoformat(last_beg)
+                if now - last_time < timedelta(minutes=15):
+                    remaining = timedelta(minutes=15) - (now - last_time)
+                    minutes = remaining.seconds // 60
+                    return await ctx.send(f"🕒 You can beg again in {minutes} minutes.")
+            except Exception as e:
+                print(f"[BEG] Failed to parse timestamp: {e}")
 
         amount = random.randint(50, 200)
-        donor = random.choice(["thetruck", "CuteBatak"])
+        donor = random.choice(["thetruck", "CuteBatak", "SomeGenerousDuck"])
 
+        new_wallet = data.get("wallet", 0) + amount
         await economy_col.update_one(
             {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-            {"$set": {"wallet": data["wallet"] + amount, "last_beg": now.isoformat()}}
+            {"$set": {"wallet": new_wallet, "last_beg": now.isoformat()}}
         )
         await ctx.send(f"🙇 {donor} was kind enough to donate **{amount} coins** to you!")
 
@@ -1048,56 +1062,47 @@ async def jobstatus(ctx):
     await ctx.send(embed=embed)
 
 @bot.command()
+@commands.cooldown(1, 10800, commands.BucketType.user)  # 3 hours = 10800 seconds
 async def fish(ctx):
     try:
         user_id = f"{ctx.guild.id}-{ctx.author.id}"
         data = await get_user(ctx.guild.id, ctx.author.id)
-        last_fished = data.get("last_fished")
         now = datetime.now(timezone.utc)
-    
+
         # Check for fishing rod
         if "fishing rod" not in data.get("inventory", []):
             return await ctx.send("🎣 You need a fishing rod to fish!")
-        
-        if last_fished:
-            if isinstance(last_fished, str):
-                try:
-                    last_fished = datetime.fromisoformat(last_fished)
-                except Exception as e:
-                    return await ctx.send("⚠️ Error fishing. Contact thetruck.")
-                    print(f"[fish error] Invalid last_fished: {e}")
-                    last_fished = None
-        
-            if last_fished:
-                delta = now - last_fished
-                if delta < timedelta(hours=3):
-                    hours_remaining = round((timedelta(hours=3) - delta).total_seconds() / 3600, 2)
-                    return await ctx.send(f"🕒 You can fish again in {hours_remaining} hours.")
-    
+
         # Perform the fishing
         catch = random.choice(fishes)
-        data["wallet"] += catch[1]
-    
+        new_wallet = data.get("wallet", 0) + catch[1]
+
         # Save to DB
         await economy_col.update_one(
             {"_id": user_id},
             {"$set": {
-                "wallet": data["wallet"],
+                "wallet": new_wallet,
                 "last_fished": now.isoformat()
             }}
         )
-    
-        await ctx.send(f"🎣 You caught a {catch[0]} and earned {catch[1]} coins!")
+
+        await ctx.send(f"🎣 You caught a **{catch[0]}** and earned **{catch[1]} coins**!")
 
     except Exception as e:
-        await ctx.send("⚠️ Something went wrong while fishing. Contact thetruck.")
         print(f"[ERROR] fish command: {type(e).__name__} - {e}")
+        import traceback
         traceback.print_exc()
+        await ctx.send("⚠️ Something went wrong while fishing. Contact thetruck.")
 
 @fish.error
 async def fish_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"🕒 You can fish again in {round(error.retry_after / 3600, 2)} hours.")
+        seconds = int(error.retry_after)
+        hours, remainder = divmod(seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        await ctx.send(f"🕒 You can fish again in {hours}h {minutes}m.")
+    else:
+        raise error
 
 @bot.command(aliases=["steal"])
 async def rob(ctx, member: discord.Member):
