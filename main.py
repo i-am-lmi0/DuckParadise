@@ -599,7 +599,7 @@ async def beg(ctx):
                 print(f"[BEG] Failed to parse timestamp: {e}")
 
         amount = random.randint(50, 200)
-        donor = random.choice(["thetruck", "CuteBatak", "SomeGenerousDuck"])
+        donor = random.choice(["thetruck", "CuteBatak"])
 
         new_wallet = data.get("wallet", 0) + amount
         await economy_col.update_one(
@@ -733,27 +733,25 @@ async def buy(ctx, *, item: str = None):
     await ctx.send(f"✅ You bought a {item}!")
     
 @bot.command()
-async def use(ctx, *, item: str):
-    item = item.lower()
+async def use(ctx, *, item_name: str):
     data = await get_user(ctx.guild.id, ctx.author.id)
-    inv = data.get("inventory", [])
+    inventory = data.get("inventory", [])
+    item_name = item_name.lower()
 
-    # Find item ignoring case
-    matched_item = next((i for i in inv if i.lower() == item), None)
-    if not matched_item:
-        return await ctx.send(f"❌ You don't have a {item} in your inventory.")
+    if item_name not in [i.lower() for i in inventory]:
+        return await ctx.send("❌ You don’t have that item in your inventory.")
 
-    # Remove one instance
-    inv.remove(matched_item)
-    await economy_col.update_one(
-        {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
-        {"$set": {"inventory": inv}}
-    )
+    if item_name == "luck potion":
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {
+                "$pull": {"inventory": "luck potion"},
+                "$set": {"luck_buff": True}
+            }
+        )
+        return await ctx.send("🍀 You used a **Luck Potion**! You’ll have better odds in your next activities for 1 use.")
 
-#    if item == "_______":
-#        await ctx.send("_____________")
-#    else:
-#        await ctx.send(f"🤷‍♂️ You used a {item}, but nothing special happened!")
+    await ctx.send("❌ That item can’t be used yet.")
 
 @bot.command(aliases=["inv"])
 async def inventory(ctx):
@@ -801,6 +799,18 @@ async def leaderboard(ctx):
 @bot.command(aliases=["cf"])
 async def coinflip(ctx, amount: int):
     data = await get_user(ctx.guild.id, ctx.author.id)
+    luck_buff = data.get("luck_buff", False)
+    adjusted_chance = conf["chance"] + 0.2 if luck_buff else conf["chance"]
+    adjusted_chance = min(adjusted_chance, 1.0)  # cap at 100%
+    
+    success = random.random() < adjusted_chance
+    
+    # remove buff after use
+    if luck_buff:
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$unset": {"luck_buff": ""}}
+        )
 
     if amount <= 0:
         return await ctx.send("❌ Invalid amount to coin flip.")
@@ -1083,6 +1093,18 @@ async def fish(ctx):
         user_id = f"{ctx.guild.id}-{ctx.author.id}"
         data = await get_user(ctx.guild.id, ctx.author.id)
         now = datetime.now(timezone.utc)
+        luck_buff = data.get("luck_buff", False)
+        adjusted_chance = conf["chance"] + 0.2 if luck_buff else conf["chance"]
+        adjusted_chance = min(adjusted_chance, 1.0)  # cap at 100%
+        
+        success = random.random() < adjusted_chance
+        
+        # remove buff after use
+        if luck_buff:
+            await economy_col.update_one(
+                {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+                {"$unset": {"luck_buff": ""}}
+            )
 
         # Check for fishing rod
         if "fishing rod" not in data.get("inventory", []):
@@ -1186,7 +1208,64 @@ async def rob(ctx, member: discord.Member):
     })
 
     await ctx.send(f"💰 You robbed {member.display_name} and stole {amount} coins!")
+
+@bot.command()
+@commands.cooldown(1, 86400, commands.BucketType.user)  # once per day
+async def crime(ctx, *, choice: str):
+    data = await get_user(ctx.guild.id, ctx.author.id)
+    wallet = data.get("wallet", 0)
+    inventory = data.get("inventory", [])
+
+    choice = choice.lower().strip()
+    valid = ["bank", "shoplift", "payroll"]
+    if choice not in valid:
+        return await ctx.send("❌ Choose a valid crime: `bank`, `shoplift`, or `payroll`.")
+
+    # Require lockpick only for bank
+    if choice == "bank":
+        if "lockpick" not in inventory:
+            return await ctx.send("🔐 You need a **🗝️ Lockpick** to rob the bank! Use `?buy lockpick`.")
+        inventory.remove("lockpick")
+
+    # Define probabilities and payouts
+    config = {
+        "bank": {"chance": 0.4, "gain": (1200, 3000), "fine": (600, 1500)},
+        "shoplift": {"chance": 0.5, "gain": (300, 600), "fine": (150, 400)},
+        "payroll": {"chance": 0.4, "gain": (800, 1500), "fine": (400, 800)},
+    }
+    conf = config[choice]
+    success = random.random() < conf["chance"]
     
+    # inside crime command before 'success = ...'
+    luck_buff = data.get("luck_buff", False)
+    adjusted_chance = conf["chance"] + 0.2 if luck_buff else conf["chance"]
+    adjusted_chance = min(adjusted_chance, 1.0)  # cap at 100%
+    
+    success = random.random() < adjusted_chance
+    
+    # remove buff after use
+    if luck_buff:
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$unset": {"luck_buff": ""}}
+        )
+
+    if success:
+        amount = random.randint(*conf["gain"])
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$inc": {"wallet": amount, "inventory": inventory}}
+        )
+        await ctx.send(f"💥 Crime successful! You earned **{amount} coins** via `{choice}` crime.")
+    else:
+        fine = random.randint(*conf["fine"])
+        new_wallet = max(0, wallet - fine)
+        await economy_col.update_one(
+            {"_id": f"{ctx.guild.id}-{ctx.author.id}"},
+            {"$set": {"wallet": new_wallet, "inventory": inventory}}
+        )
+        await ctx.send(f"🚓 You were caught during the `{choice}` attempt. Fined **{fine} coins**.")
+
 @bot.command()
 async def passive(ctx):
     user_id = f"{ctx.guild.id}-{ctx.author.id}"
@@ -1898,6 +1977,7 @@ async def cmds(ctx):
         ("?mysterybox", "Open a mystery box"),
         ("?choosejob", "Choose your dream job"),
         ("?jobstatus", "Check your next promotion")
+        ("?crime", "Attempt a risky crime to earn coins.")
     ]:
         economy.add_field(name=format_field(name, value)[0], value=value, inline=False)
 
