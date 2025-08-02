@@ -217,10 +217,14 @@ async def check_expired_mutes():
 async def before_unmute_loop():
     await bot.wait_until_ready()
 
+session = none
+
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="thetruck"))
     print(f"🎉 Bot ready — Logged in as {bot.user}")
+    if session is None:
+        session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
 
     # Only insert shop items once
     existing = await shop_col.count_documents({})
